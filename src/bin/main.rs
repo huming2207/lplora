@@ -7,17 +7,23 @@ use lplora as _; // global logger + panicking-behavior + memory layout
 #[rtic::app(
     // TODO: Replace `some_hal::pac` with the path to the PAC
     device = stm32wlxx_hal::pac,
+    dispatchers = [DAC, USART2]
 )]
 mod app {
+    use cortex_m::prelude::*;
     use cortex_m::interrupt::CriticalSection;
+    use heapless::spsc::Queue;
     use stm32wlxx_hal::{gpio::{pins, Output, PortA, PortB, PortC}, pac::Peripherals, rcc, uart::{LpUart, NoTx}, uart};
     use stm32wlxx_hal::gpio::pins::{B8, C13};
-    use lplora::constants::RFSW_GPIO_OUTPUT_ARGS;
+    use lplora::constants::{RFSW_GPIO_OUTPUT_ARGS, SLIP_END, SLIP_ESC, SLIP_START};
 
     // Shared resources go here
     #[shared]
     struct Shared {
-        
+        uart_tx_q: Queue<u8, 1024>,
+        radio_tx_q: Queue<u8, 1024>,
+        uart_rx_q: Queue<u8, 1024>,
+        radio_rx_q: Queue<u8, 1024>,
     }
 
     // Local resources go here
@@ -29,7 +35,7 @@ mod app {
     }
 
     #[init]
-    fn init(cx: init::Context) -> (Shared, Local) {
+    fn init(ctx: init::Context) -> (Shared, Local) {
         defmt::info!("init");
 
         let mut dp = Peripherals::take().unwrap();
@@ -69,9 +75,17 @@ mod app {
         let mut rf_sw_1 = Output::new(io_b.b8, &RFSW_GPIO_OUTPUT_ARGS, cs);
         let mut rf_sw_2 = Output::new(io_c.c13, &RFSW_GPIO_OUTPUT_ARGS, cs);
 
+        let uart_tx_q: Queue<u8, 1024> = Queue::new();
+        let uart_rx_q: Queue<u8, 1024> = Queue::new();
+        let radio_tx_q: Queue<u8, 1024> = Queue::new();
+        let radio_rx_q: Queue<u8, 1024> = Queue::new();
+
         (
             Shared {
-                // Initialization of shared resources go here
+                uart_tx_q,
+                radio_tx_q,
+                uart_rx_q,
+                radio_rx_q,
             },
             Local {
                 uart,
@@ -81,13 +95,45 @@ mod app {
         )
     }
 
-    #[task(binds = LPUART1, local = [uart])]
-    fn uart_task(ctx: uart_task::Context) {
+    #[task(binds = LPUART1, local = [uart], shared = [uart_tx_q])]
+    fn uart_task(mut ctx: uart_task::Context) {
+        let uart = ctx.local.uart;
+        let recv_byte = uart.read().unwrap();
 
+        ctx.shared.uart_tx_q.lock(|queue| { 
+            match recv_byte {
+                SLIP_START => {
+                    defmt::info!("UART packet started");
+                    while !queue.is_empty() {
+                        queue.dequeue().unwrap();
+                    }
+    
+                    queue.enqueue(recv_byte).unwrap();
+                },
+                SLIP_END => {
+                    defmt::info!("UART packet ended");
+                    queue.enqueue(recv_byte).unwrap();
+                    uart_parser::spawn().unwrap();
+                },
+                _ => {
+                    queue.enqueue(recv_byte).unwrap();
+                }
+            }
+        })
     }
 
     #[task(binds = RADIO_IRQ_BUSY)]
     fn radio_task(ctx: radio_task::Context) {
+
+    }
+
+    #[task(priority = 2, shared = [uart_tx_q])]
+    async fn uart_parser(ctx: uart_parser::Context) {
+
+    }
+
+    #[task(priority = 2)]
+    async fn radio_ctrl(ctx: radio_ctrl::Context) {
 
     }
 
