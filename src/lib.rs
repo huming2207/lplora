@@ -7,8 +7,8 @@ use defmt_rtt as _; // global logger
 use panic_probe as _;
 use stm32wlxx_hal as _; // memory layout
 
-
 pub mod constants;
+pub mod radio;
 
 // same panicking *behavior* as `panic-probe` but doesn't print a panic message
 // this prevents the panic message being printed *twice* when `defmt::panic` is invoked
