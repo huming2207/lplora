@@ -93,7 +93,7 @@ pub fn start_radio_tx(
     Ok(())
 }
 
-pub fn handle_radio_tx_done(radio: &mut SubGhz<SgMiso, SgMosi>) -> Result<(), Error> {
+pub fn set_radio_to_standby(radio: &mut SubGhz<SgMiso, SgMosi>) -> Result<(), Error> {
     radio.set_standby(StandbyClk::Rc)?;
 
     Ok(())
