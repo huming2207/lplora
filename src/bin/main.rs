@@ -150,45 +150,38 @@ mod app {
                 defmt::error!("radio: TxTimeout! Something fucked?");
             } else {
                 defmt::info!("radio: RxTimeout! Re-enter Rx");
+                rfsw_1.set_level_high();
+                rfsw_2.set_level_low();
                 start_radio_rx(radio, 5000).unwrap();
             }
         } else if irq & Irq::RxDone.mask() != 0 {
-            let mut buf: [u8; 256] = [0; 256];
-            let dummy_status: [u8; 4] = [0; 4];
-            let mut pkt_status: LoRaPacketStatus = LoRaPacketStatus::from(dummy_status);
-            let mut recv_len: u8 = 0;
             defmt::info!("radio: RxDone, handling...");
-            handle_radio_rx_done(radio, irq, buf.as_mut_slice(), &mut pkt_status, &mut recv_len).unwrap();
-            defmt::info!("radio: RxDone, got {:?}; len={}", pkt_status, recv_len);
+            rfsw_1.set_level_low();
+            rfsw_2.set_level_low();
             ctx.shared.radio_rx_q.lock(|q| {
-                for b in buf {
-                    match q.enqueue(b) {
-                        Ok(_) => {},
-                        Err(e) => {
-                            defmt::error!("radio: Rx queue full, ditching oldest...");
-                            q.dequeue();
-                            q.enqueue(e).unwrap();
-                        }
-                    }
-                        
-                }
-            })
+                handle_radio_rx_done(radio, irq, q).unwrap();
+            });
+            // TODO: probably spawn UART Tx here
+
+            // ...and then go back to Rx?
+            rfsw_1.set_level_high();
+            rfsw_2.set_level_low();
+            start_radio_rx(radio, 5000).unwrap();
         } else if irq & Irq::TxDone.mask() != 0 {
             defmt::info!("radio: TxDone, re-enter Rx");
+            rfsw_1.set_level_high();
+            rfsw_2.set_level_low();
             start_radio_rx(radio, 5000).unwrap();
         }
-
-        radio.clear_irq_status(irq).unwrap();
-
     }
 
     #[task(priority = 2, shared = [uart_tx_q])]
-    async fn uart_parser(ctx: uart_parser::Context) {
+    async fn uart_parser(mut ctx: uart_parser::Context) {
 
     }
 
     #[task(priority = 2)]
-    async fn radio_ctrl(ctx: radio_ctrl::Context) {}
+    async fn radio_ctrl(mut ctx: radio_ctrl::Context) {}
 
     // Optional idle, can be removed if not needed.
     #[idle]

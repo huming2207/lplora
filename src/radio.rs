@@ -1,3 +1,6 @@
+use core::cmp;
+
+use heapless::spsc::Queue;
 use stm32wlxx_hal::{
     gpio::{
         pins::{B8, C13},
@@ -11,8 +14,50 @@ use stm32wlxx_hal::{
     },
 };
 
+use crate::{constants::{SLIP_END, SLIP_START}, misc::slip_enqueue};
+
 const TX_BUF_OFFSET: u8 = 128;
 const RX_BUF_OFFSET: u8 = 0;
+
+fn radio_encode_packet(radio: &mut SubGhz<SgMiso, SgMosi>, rx_queue: &mut Queue<u8, 1024>) -> Result<(), Error> {
+    let pkt_status = radio.lora_packet_status()?;
+
+    let mut output_buf: [u8; 256] = [0; 256];
+    let (_, data_len, ptr) = radio.rx_buffer_status()?;
+    radio.read_buffer(ptr, output_buf.as_mut_slice())?;
+    
+    defmt::info!("radio: RxDone, got {:?}; len={}", pkt_status, data_len);
+    match rx_queue.enqueue(SLIP_START) {
+        Ok(_) => {},
+        Err(b) => {
+            defmt::warn!("radio: Rx buffer full! Ditching oldest");
+            rx_queue.dequeue(); // Drop the oldest
+            rx_queue.enqueue(b).unwrap();
+        }
+    }
+
+    let pkt_rssi = cmp::max(pkt_status.signal_rssi_pkt().to_integer(), 0);
+    slip_enqueue(rx_queue, (pkt_rssi * -1) as u8);
+
+    let snr = cmp::max(pkt_status.snr_pkt().to_integer(), 0);
+    slip_enqueue(rx_queue, (snr * -1) as u8);
+    slip_enqueue(rx_queue, data_len);
+    
+    for b in output_buf {
+        slip_enqueue(rx_queue, b);
+    }
+
+    match rx_queue.enqueue(SLIP_END) {
+        Ok(_) => {},
+        Err(b) => {
+            defmt::warn!("radio: Rx buffer full! Ditching oldest");
+            rx_queue.dequeue(); // Drop the oldest
+            rx_queue.enqueue(b).unwrap();
+        }
+    }
+
+    Ok(())
+}
 
 pub fn setup_radio(
     radio: &mut SubGhz<SgMiso, SgMosi>,
@@ -59,16 +104,10 @@ pub fn start_radio_rx(radio: &mut SubGhz<SgMiso, SgMosi>, timeout_ms: u32) -> Re
 pub fn handle_radio_rx_done(
     radio: &mut SubGhz<SgMiso, SgMosi>,
     irq: u16,
-    output_buf: &mut [u8],
-    pkt_status: &mut LoRaPacketStatus,
-    recv_len: &mut u8,
+    rx_queue: &mut Queue<u8, 1024>
 ) -> Result<(), Error> {
     if irq & Irq::Timeout.mask() == 0 && irq & Irq::RxDone.mask() != 0 {
-        *pkt_status = radio.lora_packet_status()?;
-
-        let (_, data_len, ptr) = radio.rx_buffer_status()?;
-        radio.read_buffer(ptr, output_buf)?;
-        *recv_len = data_len;
+        radio_encode_packet(radio, rx_queue)?;
         return Ok(());
     }
 
