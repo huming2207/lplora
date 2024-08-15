@@ -11,7 +11,7 @@ use stm32wlxx_hal::{
     },
 };
 
-use crate::{constants::CacheQueue, packet::{enqueue_radio_recv_pkt, slip_enqueue}};
+use crate::{constants::CacheQueue, packet::enqueue_radio_recv_pkt};
 
 const TX_BUF_OFFSET: u8 = 128;
 const RX_BUF_OFFSET: u8 = 0;

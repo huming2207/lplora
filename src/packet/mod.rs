@@ -4,6 +4,8 @@ use stm32wlxx_hal::subghz::LoRaPacketStatus;
 
 use crate::constants::{CacheQueue, CRC, SLIP_END, SLIP_ESC, SLIP_ESC_END, SLIP_ESC_ESC, SLIP_ESC_START, SLIP_START};
 
+pub mod uart_packet;
+
 pub fn enqueue_radio_recv_pkt(pkt_status: LoRaPacketStatus, buf: &[u8], queue: &mut CacheQueue, data_len: u8) {
     defmt::info!("radio: RxDone, got {:?}; len={}", pkt_status, data_len);
     let mut digest = CRC.digest();
@@ -17,24 +19,28 @@ pub fn enqueue_radio_recv_pkt(pkt_status: LoRaPacketStatus, buf: &[u8], queue: &
     }
 
     let pkt_rssi = cmp::max(pkt_status.signal_rssi_pkt().to_integer(), 0);
-    slip_enqueue(queue, (pkt_rssi * -1) as u8);
     digest.update(&[(pkt_rssi * -1) as u8]);
 
     let snr = cmp::max(pkt_status.snr_pkt().to_integer(), 0);
-    slip_enqueue(queue, (snr * -1) as u8);
     digest.update(&[(snr * -1) as u8]);
-    slip_enqueue(queue, data_len);
-    digest.update(&[data_len]);
-    
+
     for b in buf {
-        slip_enqueue(queue, *b);
         digest.update(&[*b]);
     }
 
     let checksum: [u8; 2] = digest.finalize().to_le_bytes();
-
+    let pkt_len: [u8; 2] = ((checksum.len() + data_len as usize + 2) as u16).to_le_bytes();
+    slip_enqueue(queue, pkt_len[0]);
+    slip_enqueue(queue, pkt_len[1]);
     slip_enqueue(queue, checksum[0]);
     slip_enqueue(queue, checksum[1]);
+    
+    slip_enqueue(queue, (pkt_rssi * -1) as u8);
+    slip_enqueue(queue, (snr * -1) as u8);
+
+    for b in buf {
+        slip_enqueue(queue, *b);
+    }
 
     match queue.enqueue(SLIP_END) {
         Ok(_) => {},
@@ -47,7 +53,11 @@ pub fn enqueue_radio_recv_pkt(pkt_status: LoRaPacketStatus, buf: &[u8], queue: &
 
 }
 
-pub fn enqueue_ditch_oldest(queue: &mut CacheQueue, b: u8) {
+pub fn parse_uart_packet(queue: &mut CacheQueue) -> Result<(), ()> {
+    Ok(())
+}
+
+fn enqueue_ditch_oldest(queue: &mut CacheQueue, b: u8) {
     match queue.enqueue(SLIP_START) {
         Ok(_) => {},
         Err(b) => {
@@ -57,7 +67,7 @@ pub fn enqueue_ditch_oldest(queue: &mut CacheQueue, b: u8) {
     }
 }
 
-pub fn slip_enqueue(queue: &mut CacheQueue, b: u8) {
+fn slip_enqueue(queue: &mut CacheQueue, b: u8) {
     match b {
         SLIP_START => {
             enqueue_ditch_oldest(queue, SLIP_ESC);
@@ -77,7 +87,7 @@ pub fn slip_enqueue(queue: &mut CacheQueue, b: u8) {
     }
 }
 
-pub fn slip_dequeue(queue: &mut CacheQueue, out: &mut [u8]) -> Result<(), ()> {
+fn slip_dequeue(queue: &mut CacheQueue, out: &mut [u8]) -> Result<(), ()> {
     let mut begin: bool = false;
     let mut ctr: usize = 0;
 
