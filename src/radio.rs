@@ -1,6 +1,3 @@
-use core::cmp;
-
-use heapless::spsc::Queue;
 use stm32wlxx_hal::{
     gpio::{
         pins::{B8, C13},
@@ -14,12 +11,12 @@ use stm32wlxx_hal::{
     },
 };
 
-use crate::{constants::{SLIP_END, SLIP_START}, misc::slip_enqueue};
+use crate::{constants::CacheQueue, packet::{enqueue_radio_recv_pkt, slip_enqueue}};
 
 const TX_BUF_OFFSET: u8 = 128;
 const RX_BUF_OFFSET: u8 = 0;
 
-fn radio_encode_packet(radio: &mut SubGhz<SgMiso, SgMosi>, rx_queue: &mut Queue<u8, 1024>) -> Result<(), Error> {
+fn radio_encode_packet(radio: &mut SubGhz<SgMiso, SgMosi>, rx_queue: &mut CacheQueue) -> Result<(), Error> {
     let pkt_status = radio.lora_packet_status()?;
 
     let mut output_buf: [u8; 256] = [0; 256];
@@ -27,34 +24,7 @@ fn radio_encode_packet(radio: &mut SubGhz<SgMiso, SgMosi>, rx_queue: &mut Queue<
     radio.read_buffer(ptr, output_buf.as_mut_slice())?;
     
     defmt::info!("radio: RxDone, got {:?}; len={}", pkt_status, data_len);
-    match rx_queue.enqueue(SLIP_START) {
-        Ok(_) => {},
-        Err(b) => {
-            defmt::warn!("radio: Rx buffer full! Ditching oldest");
-            rx_queue.dequeue(); // Drop the oldest
-            rx_queue.enqueue(b).unwrap();
-        }
-    }
-
-    let pkt_rssi = cmp::max(pkt_status.signal_rssi_pkt().to_integer(), 0);
-    slip_enqueue(rx_queue, (pkt_rssi * -1) as u8);
-
-    let snr = cmp::max(pkt_status.snr_pkt().to_integer(), 0);
-    slip_enqueue(rx_queue, (snr * -1) as u8);
-    slip_enqueue(rx_queue, data_len);
-    
-    for b in output_buf {
-        slip_enqueue(rx_queue, b);
-    }
-
-    match rx_queue.enqueue(SLIP_END) {
-        Ok(_) => {},
-        Err(b) => {
-            defmt::warn!("radio: Rx buffer full! Ditching oldest");
-            rx_queue.dequeue(); // Drop the oldest
-            rx_queue.enqueue(b).unwrap();
-        }
-    }
+    enqueue_radio_recv_pkt(pkt_status, output_buf.as_slice(), rx_queue, data_len);
 
     Ok(())
 }
@@ -104,7 +74,7 @@ pub fn start_radio_rx(radio: &mut SubGhz<SgMiso, SgMosi>, timeout_ms: u32) -> Re
 pub fn handle_radio_rx_done(
     radio: &mut SubGhz<SgMiso, SgMosi>,
     irq: u16,
-    rx_queue: &mut Queue<u8, 1024>
+    rx_queue: &mut CacheQueue
 ) -> Result<(), Error> {
     if irq & Irq::Timeout.mask() == 0 && irq & Irq::RxDone.mask() != 0 {
         radio_encode_packet(radio, rx_queue)?;

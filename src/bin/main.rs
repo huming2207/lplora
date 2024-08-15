@@ -13,7 +13,7 @@ mod app {
     use cortex_m::interrupt::CriticalSection;
     use cortex_m::prelude::*;
     use heapless::spsc::Queue;
-    use lplora::constants::{RFSW_GPIO_OUTPUT_ARGS, SLIP_END, SLIP_ESC, SLIP_START};
+    use lplora::constants::{CacheQueue, RFSW_GPIO_OUTPUT_ARGS, SLIP_END, SLIP_ESC, SLIP_START};
     use lplora::radio::{handle_radio_rx_done, start_radio_rx, start_radio_tx};
     use stm32wlxx_hal::gpio::pins::{B8, C13};
     use stm32wlxx_hal::spi::{SgMiso, SgMosi};
@@ -28,16 +28,16 @@ mod app {
     // Shared resources go here
     #[shared]
     struct Shared {
-        uart_tx_q: Queue<u8, 1024>,
-        radio_tx_q: Queue<u8, 1024>,
-        uart_rx_q: Queue<u8, 1024>,
-        radio_rx_q: Queue<u8, 1024>,
+        uart_tx_q: CacheQueue,
+        radio_tx_q: CacheQueue,
+        uart_rx_q: CacheQueue,
+        radio_rx_q: CacheQueue,
+        uart: LpUart<pins::A3, pins::A2>,
     }
 
     // Local resources go here
     #[local]
     struct Local {
-        uart: LpUart<pins::A3, pins::A2>,
         radio: SubGhz<SgMiso, SgMosi>,
         rf_sw_1: Output<B8>,
         rf_sw_2: Output<C13>,
@@ -86,10 +86,10 @@ mod app {
         let mut rf_sw_1 = Output::new(io_b.b8, &RFSW_GPIO_OUTPUT_ARGS, cs);
         let mut rf_sw_2 = Output::new(io_c.c13, &RFSW_GPIO_OUTPUT_ARGS, cs);
 
-        let mut uart_tx_q: Queue<u8, 1024> = Queue::new();
-        let mut uart_rx_q: Queue<u8, 1024> = Queue::new();
-        let mut  radio_tx_q: Queue<u8, 1024> = Queue::new();
-        let mut radio_rx_q: Queue<u8, 1024> = Queue::new();
+        let mut uart_tx_q: CacheQueue = Queue::new();
+        let mut uart_rx_q: CacheQueue = Queue::new();
+        let mut  radio_tx_q: CacheQueue = Queue::new();
+        let mut radio_rx_q: CacheQueue = Queue::new();
 
         let mut radio = SubGhz::new(dp.SPI3, &mut dp.RCC);
 
@@ -101,9 +101,10 @@ mod app {
                 radio_tx_q,
                 uart_rx_q,
                 radio_rx_q,
+
+                uart,
             },
             Local {
-                uart,
                 radio,
                 rf_sw_1,
                 rf_sw_2,
@@ -111,11 +112,13 @@ mod app {
         )
     }
 
-    #[task(binds = LPUART1, local = [uart], shared = [uart_rx_q])]
+    #[task(binds = LPUART1, shared = [uart_rx_q, uart])]
     fn uart_task(mut ctx: uart_task::Context) {
-        let uart = ctx.local.uart;
-        let recv_byte = uart.read().unwrap();
+        let recv_byte = ctx.shared.uart.lock(|uart| {
+            uart.read().unwrap()
+        });
 
+        let mut packet_ended: bool = false;
         ctx.shared.uart_rx_q.lock(|queue| match recv_byte {
             SLIP_START => {
                 defmt::info!("UART packet started");
@@ -128,15 +131,19 @@ mod app {
             SLIP_END => {
                 defmt::info!("UART packet ended");
                 queue.enqueue(recv_byte).unwrap();
-                uart_parser::spawn().unwrap();
+                packet_ended = true;
             }
             _ => {
                 queue.enqueue(recv_byte).unwrap();
             }
-        })
+        });
+
+        if packet_ended {
+            
+        }
     }
 
-    #[task(binds = RADIO_IRQ_BUSY, local = [radio, rf_sw_1, rf_sw_2, was_tx: bool = false], shared = [radio_rx_q])]
+    #[task(binds = RADIO_IRQ_BUSY, local = [radio, rf_sw_1, rf_sw_2, was_tx: bool = false], shared = [uart_tx_q])]
     fn radio_task(mut ctx: radio_task::Context) {
         let radio = ctx.local.radio;
         let rfsw_1 = ctx.local.rf_sw_1;
@@ -158,10 +165,12 @@ mod app {
             defmt::info!("radio: RxDone, handling...");
             rfsw_1.set_level_low();
             rfsw_2.set_level_low();
-            ctx.shared.radio_rx_q.lock(|q| {
+            ctx.shared.uart_tx_q.lock(|q| {
                 handle_radio_rx_done(radio, irq, q).unwrap();
             });
+
             // TODO: probably spawn UART Tx here
+            uart_tx::spawn().unwrap();
 
             // ...and then go back to Rx?
             rfsw_1.set_level_high();
@@ -175,9 +184,23 @@ mod app {
         }
     }
 
-    #[task(priority = 2, shared = [uart_tx_q])]
-    async fn uart_parser(mut ctx: uart_parser::Context) {
+    #[task(priority = 2, shared = [uart_tx_q, uart])]
+    async fn uart_tx(ctx: uart_tx::Context) {
+        let queue = ctx.shared.uart_tx_q;
+        let uart = ctx.shared.uart;
+        (queue, uart).lock(|q, uart| {
+            let tx_byte = match q.dequeue() {
+                Some(b) => b,
+                None => return,
+            };
 
+            loop {
+                match uart.write(tx_byte) {
+                    Ok(_) => break,
+                    Err(_) => continue,
+                }
+            }
+        });
     }
 
     #[task(priority = 2)]

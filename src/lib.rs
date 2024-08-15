@@ -9,7 +9,7 @@ use stm32wlxx_hal as _; // memory layout
 
 pub mod constants;
 pub mod radio;
-pub mod misc;
+pub mod packet;
 
 // same panicking *behavior* as `panic-probe` but doesn't print a panic message
 // this prevents the panic message being printed *twice* when `defmt::panic` is invoked
