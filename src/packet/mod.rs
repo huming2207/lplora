@@ -2,7 +2,35 @@ use crate::constants::{
     CacheQueue, SLIP_END, SLIP_ESC, SLIP_ESC_END, SLIP_ESC_ESC, SLIP_ESC_START, SLIP_START,
 };
 
+pub mod uart_pkt_decoder;
 pub mod uart_pkt_encoder;
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, defmt::Format)]
+pub enum UartPacketError {
+    ChecksumError,
+    BufferFullError,
+    EncodingError, // SLIP state invalid
+    UnknownPacketError,
+}
+
+#[repr(u8)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, defmt::Format)]
+pub enum UartPacketType {
+    RadioSendPacket = 0x01,
+    RadioRecvLoRaPacket = 0x81,
+}
+
+impl TryFrom<u8> for UartPacketType {
+    type Error = UartPacketError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x01 => Ok(Self::RadioSendPacket),
+            0x81 => Ok(Self::RadioRecvLoRaPacket),
+            _ => Err(UartPacketError::UnknownPacketError),
+        }
+    }
+}
 
 fn enqueue_ditch_oldest(queue: &mut CacheQueue, b: u8) {
     match queue.enqueue(b) {
@@ -34,7 +62,7 @@ fn slip_enqueue(queue: &mut CacheQueue, b: u8) {
     }
 }
 
-fn slip_dequeue(queue: &mut CacheQueue, out: &mut [u8]) -> Result<(), ()> {
+fn slip_dequeue(queue: &mut CacheQueue, out: &mut [u8]) -> Result<(), UartPacketError> {
     let mut begin: bool = false;
     let mut ctr: usize = 0;
 
@@ -48,9 +76,6 @@ fn slip_dequeue(queue: &mut CacheQueue, out: &mut [u8]) -> Result<(), ()> {
             SLIP_START => {
                 if !begin {
                     begin = true;
-                } else {
-                    // Something fucked, handle error
-                    defmt::error!("slip_decode: Start byte occur twice!");
                 }
             }
 
@@ -82,7 +107,7 @@ fn slip_dequeue(queue: &mut CacheQueue, out: &mut [u8]) -> Result<(), ()> {
                     }
                     _ => {
                         defmt::error!("slip_decode: unknown ESC byte {:02x}", esc);
-                        break;
+                        return Err(UartPacketError::EncodingError);
                     }
                 }
             }
@@ -94,14 +119,14 @@ fn slip_dequeue(queue: &mut CacheQueue, out: &mut [u8]) -> Result<(), ()> {
         }
 
         if out.len() <= ctr {
-            defmt::warn!("slip_decode: output buffer full!");
-            break;
+            defmt::error!("slip_decode: output buffer full!");
+            return Err(UartPacketError::BufferFullError);
         }
     }
 
     if !begin {
         Ok(())
     } else {
-        Err(())
+        Err(UartPacketError::EncodingError)
     }
 }

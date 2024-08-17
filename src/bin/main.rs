@@ -13,11 +13,11 @@ mod app {
     use cortex_m::interrupt::CriticalSection;
     use cortex_m::prelude::*;
     use heapless::spsc::Queue;
-    use lplora::constants::{CacheQueue, RFSW_GPIO_OUTPUT_ARGS, SLIP_END, SLIP_ESC, SLIP_START};
-    use lplora::radio::{handle_radio_rx_done, start_radio_rx, start_radio_tx};
+    use lplora::constants::{CacheQueue, RFSW_GPIO_OUTPUT_ARGS, SLIP_END, SLIP_START};
+    use lplora::radio::{handle_radio_rx_done, start_radio_rx};
     use stm32wlxx_hal::gpio::pins::{B8, C13};
     use stm32wlxx_hal::spi::{SgMiso, SgMosi};
-    use stm32wlxx_hal::subghz::{Irq, LoRaPacketStatus, SubGhz, Timeout};
+    use stm32wlxx_hal::subghz::{Irq, SubGhz};
     use stm32wlxx_hal::{
         gpio::{pins, Output, PortA, PortB, PortC},
         pac::Peripherals,
@@ -88,7 +88,7 @@ mod app {
 
         let mut uart_tx_q: CacheQueue = Queue::new();
         let mut uart_rx_q: CacheQueue = Queue::new();
-        let mut  radio_tx_q: CacheQueue = Queue::new();
+        let mut radio_tx_q: CacheQueue = Queue::new();
         let mut radio_rx_q: CacheQueue = Queue::new();
 
         let mut radio = SubGhz::new(dp.SPI3, &mut dp.RCC);
@@ -114,9 +114,7 @@ mod app {
 
     #[task(binds = LPUART1, shared = [uart_rx_q, uart])]
     fn uart_task(mut ctx: uart_task::Context) {
-        let recv_byte = ctx.shared.uart.lock(|uart| {
-            uart.read().unwrap()
-        });
+        let recv_byte = ctx.shared.uart.lock(|uart| uart.read().unwrap());
 
         let mut packet_ended: bool = false;
         ctx.shared.uart_rx_q.lock(|queue| match recv_byte {
@@ -139,7 +137,7 @@ mod app {
         });
 
         if packet_ended {
-            
+
         }
     }
 
@@ -152,7 +150,7 @@ mod app {
         let (_, irq) = radio.irq_status().unwrap();
         radio.clear_irq_status(irq).unwrap();
 
-        if irq & Irq::Timeout.mask() != 0 { 
+        if irq & Irq::Timeout.mask() != 0 {
             if *was_tx {
                 defmt::error!("radio: TxTimeout! Something fucked?");
             } else {

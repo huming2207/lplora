@@ -17,9 +17,3 @@ pub const SLIP_ESC_ESC: u8 = 0xdd;
 pub const SLIP_ESC_START: u8 = 0xde;
 pub const CRC: crc::Crc<u16, Table<1>> = crc::Crc::<u16, Table<1>>::new(&crc::CRC_16_KERMIT);
 pub type CacheQueue = Queue<u8, 1024>;
-
-#[repr(u8)]
-pub enum PacketType {
-    RadioSendPacket = 0x01,
-    RadioRecvPacket = 0x81,
-}

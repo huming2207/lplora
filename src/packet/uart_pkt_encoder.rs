@@ -3,9 +3,9 @@ use core::cmp;
 use crc::Digest;
 use stm32wlxx_hal::subghz::LoRaPacketStatus;
 
-use crate::constants::{CacheQueue, PacketType, CRC, SLIP_END, SLIP_START};
+use crate::constants::{CacheQueue, CRC, SLIP_END, SLIP_START};
 
-use super::slip_enqueue;
+use super::{slip_enqueue, UartPacketType};
 
 pub struct UartPacketEncoder<'a> {
     queue: &'a mut CacheQueue,
@@ -13,7 +13,7 @@ pub struct UartPacketEncoder<'a> {
 }
 
 impl<'a> UartPacketEncoder<'a> {
-    pub fn new(pkt_type: PacketType, queue: &'a mut CacheQueue) -> UartPacketEncoder<'a> {
+    pub fn new(pkt_type: UartPacketType, queue: &'a mut CacheQueue) -> UartPacketEncoder<'a> {
         let mut digest = CRC.digest();
         digest.update(&[pkt_type as u8]);
 
@@ -26,6 +26,7 @@ impl<'a> UartPacketEncoder<'a> {
             }
         }
 
+        slip_enqueue(queue, pkt_type as u8);
         UartPacketEncoder { queue, digest }
     }
 

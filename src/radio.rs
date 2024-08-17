@@ -1,13 +1,15 @@
 use stm32wlxx_hal::{
     spi::{Error, SgMiso, SgMosi},
     subghz::{
-        CalibrateImage, FallbackMode, Irq, LoRaModParams, LoRaPacketParams,
-        LoRaSyncWord, Ocp, PaConfig, PacketType, RegMode, RfFreq, StandbyClk, SubGhz, Timeout,
-        TxParams,
+        CalibrateImage, FallbackMode, Irq, LoRaModParams, LoRaPacketParams, LoRaSyncWord, Ocp,
+        PaConfig, PacketType, RegMode, RfFreq, StandbyClk, SubGhz, Timeout, TxParams,
     },
 };
 
-use crate::{constants::CacheQueue, packet::uart_pkt_encoder::UartPacketEncoder};
+use crate::{
+    constants::CacheQueue,
+    packet::{uart_pkt_encoder::UartPacketEncoder, UartPacketType},
+};
 
 const TX_BUF_OFFSET: u8 = 128;
 const RX_BUF_OFFSET: u8 = 0;
@@ -23,8 +25,7 @@ fn radio_encode_packet(
     radio.read_buffer(ptr, output_buf.as_mut_slice())?;
 
     defmt::info!("radio: RxDone, got {:?}; len={}", pkt_status, data_len);
-    let mut encoder =
-        UartPacketEncoder::new(crate::constants::PacketType::RadioRecvPacket, rx_queue);
+    let mut encoder = UartPacketEncoder::new(UartPacketType::RadioRecvLoRaPacket, rx_queue);
     encoder.add_payload_with_lora_status(output_buf.as_slice(), data_len, pkt_status);
     encoder.finalize();
 
