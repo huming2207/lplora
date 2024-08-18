@@ -1,9 +1,11 @@
-use crate::constants::{
-    CacheQueue, SLIP_END, SLIP_ESC, SLIP_ESC_END, SLIP_ESC_ESC, SLIP_ESC_START, SLIP_START,
-};
+use crc::Table;
+
+use crate::constants::{CacheQueue, SLIP_END, SLIP_ESC, SLIP_ESC_END, SLIP_ESC_ESC, SLIP_ESC_START, SLIP_START};
 
 pub mod uart_pkt_decoder;
 pub mod uart_pkt_encoder;
+
+pub const CRC: crc::Crc<u16, Table<1>> = crc::Crc::<u16, Table<1>>::new(&crc::CRC_16_KERMIT);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, defmt::Format)]
 pub enum UartPacketError {

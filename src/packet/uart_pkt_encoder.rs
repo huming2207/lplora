@@ -3,9 +3,9 @@ use core::cmp;
 use crc::Digest;
 use stm32wlxx_hal::subghz::LoRaPacketStatus;
 
-use crate::constants::{CacheQueue, CRC, SLIP_END, SLIP_START};
+use crate::constants::{CacheQueue, SLIP_END, SLIP_START};
 
-use super::{slip_enqueue, UartPacketType};
+use super::{slip_enqueue, UartPacketType, CRC};
 
 pub struct UartPacketEncoder<'a> {
     queue: &'a mut CacheQueue,
@@ -36,12 +36,7 @@ impl<'a> UartPacketEncoder<'a> {
         slip_enqueue(self.queue, pkt_len_bytes[1]);
     }
 
-    pub fn add_payload_with_lora_status(
-        &mut self,
-        payload: &[u8],
-        data_len: u8,
-        pkt_status: LoRaPacketStatus,
-    ) {
+    pub fn add_payload_with_lora_status(&mut self, payload: &[u8], data_len: u8, pkt_status: LoRaPacketStatus) {
         let pkt_rssi = cmp::max(pkt_status.signal_rssi_pkt().to_integer(), 0);
         self.digest.update(&[(pkt_rssi * -1) as u8]);
 

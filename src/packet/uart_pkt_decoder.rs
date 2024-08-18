@@ -1,6 +1,6 @@
-use crate::constants::{CacheQueue, CRC};
+use crate::constants::CacheQueue;
 
-use super::{slip_dequeue, UartPacketError, UartPacketType};
+use super::{slip_dequeue, UartPacketError, UartPacketType, CRC};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, defmt::Format)]
 pub struct UartPacketDecoder {
@@ -14,23 +14,28 @@ impl UartPacketDecoder {
         let mut buf: [u8; 300] = [0; 300];
         slip_dequeue(queue, &mut buf)?;
 
-
-
         let pkt_type = UartPacketType::try_from(buf[0])?;
         let payload_len_bytes: [u8; 2] = [buf[0], buf[1]];
         let curr_payload_len = u16::from_le_bytes(payload_len_bytes);
-        if buf.len() <  curr_payload_len as usize {
+        if buf.len() < curr_payload_len as usize {
             defmt::error!("UartPacketDecoder: invalid length: {}", curr_payload_len);
             return Err(UartPacketError::CorruptedError);
         }
 
-        let crc_bytes: [u8; 2] = [buf[(curr_payload_len - 2) as usize], buf[(curr_payload_len - 1) as usize]];
+        let crc_bytes: [u8; 2] = [
+            buf[(curr_payload_len - 2) as usize],
+            buf[(curr_payload_len - 1) as usize],
+        ];
         let expected_crc = u16::from_le_bytes(crc_bytes);
         let mut digest = CRC.digest();
         digest.update(&buf[0..(curr_payload_len - 2) as usize]);
         let actual_crc = digest.finalize();
         if actual_crc != expected_crc {
-            defmt::error!("UartPacketDecoder: invalid CRC: 0x{:04x} vs. 0x{:04x}", expected_crc, actual_crc);
+            defmt::error!(
+                "UartPacketDecoder: invalid CRC: 0x{:04x} vs. 0x{:04x}",
+                expected_crc,
+                actual_crc
+            );
             return Err(UartPacketError::CorruptedError);
         }
 

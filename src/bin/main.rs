@@ -71,16 +71,13 @@ mod app {
         let io_c: PortC = PortC::split(dp.GPIOC, &mut dp.RCC);
 
         // Enable LSE
-        dp.RCC
-            .bdcr
-            .modify(|_, w| w.lseon().on().lsesysen().enabled());
+        dp.RCC.bdcr.modify(|_, w| w.lseon().on().lsesysen().enabled());
         while dp.RCC.bdcr.read().lserdy().is_not_ready() {}
         while dp.RCC.bdcr.read().lsesysrdy().is_not_ready() {}
 
-        let mut uart: LpUart<pins::A3, pins::A2> =
-            LpUart::new(dp.LPUART, 9600, uart::Clk::Lse, &mut dp.RCC)
-                .enable_rx(io_a.a3, cs)
-                .enable_tx(io_a.a2, cs);
+        let mut uart: LpUart<pins::A3, pins::A2> = LpUart::new(dp.LPUART, 9600, uart::Clk::Lse, &mut dp.RCC)
+            .enable_rx(io_a.a3, cs)
+            .enable_tx(io_a.a2, cs);
 
         // Set up RF Switch GPIOs
         let mut rf_sw_1 = Output::new(io_b.b8, &RFSW_GPIO_OUTPUT_ARGS, cs);
@@ -136,9 +133,7 @@ mod app {
             }
         });
 
-        if packet_ended {
-
-        }
+        if packet_ended {}
     }
 
     #[task(binds = RADIO_IRQ_BUSY, local = [radio, rf_sw_1, rf_sw_2, was_tx: bool = false], shared = [uart_tx_q])]

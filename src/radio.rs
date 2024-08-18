@@ -1,8 +1,8 @@
 use stm32wlxx_hal::{
     spi::{Error, SgMiso, SgMosi},
     subghz::{
-        CalibrateImage, FallbackMode, Irq, LoRaModParams, LoRaPacketParams, LoRaSyncWord, Ocp,
-        PaConfig, PacketType, RegMode, RfFreq, StandbyClk, SubGhz, Timeout, TxParams,
+        CalibrateImage, FallbackMode, Irq, LoRaModParams, LoRaPacketParams, LoRaSyncWord, Ocp, PaConfig, PacketType,
+        RegMode, RfFreq, StandbyClk, SubGhz, Timeout, TxParams,
     },
 };
 
@@ -14,10 +14,7 @@ use crate::{
 const TX_BUF_OFFSET: u8 = 128;
 const RX_BUF_OFFSET: u8 = 0;
 
-fn radio_encode_packet(
-    radio: &mut SubGhz<SgMiso, SgMosi>,
-    rx_queue: &mut CacheQueue,
-) -> Result<(), Error> {
+fn radio_encode_packet(radio: &mut SubGhz<SgMiso, SgMosi>, rx_queue: &mut CacheQueue) -> Result<(), Error> {
     let pkt_status = radio.lora_packet_status()?;
 
     let mut output_buf: [u8; 256] = [0; 256];
@@ -87,11 +84,7 @@ pub fn handle_radio_rx_done(
     Ok(())
 }
 
-pub fn start_radio_tx(
-    radio: &mut SubGhz<SgMiso, SgMosi>,
-    tx_buf: &[u8],
-    timeout_ms: u32,
-) -> Result<(), Error> {
+pub fn start_radio_tx(radio: &mut SubGhz<SgMiso, SgMosi>, tx_buf: &[u8], timeout_ms: u32) -> Result<(), Error> {
     radio.write_buffer(TX_BUF_OFFSET, tx_buf)?;
     let (_, irq) = radio.irq_status()?;
     radio.clear_irq_status(irq)?;
