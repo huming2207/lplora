@@ -38,6 +38,7 @@ mod app {
     // Local resources go here
     #[local]
     struct Local {
+        dp: Peripherals,
         radio: SubGhz<SgMiso, SgMosi>,
         rf_sw_1: Output<B8>,
         rf_sw_2: Output<C13>,
@@ -75,9 +76,16 @@ mod app {
         while dp.RCC.bdcr.read().lserdy().is_not_ready() {}
         while dp.RCC.bdcr.read().lsesysrdy().is_not_ready() {}
 
+        let dp_dirty = unsafe { Peripherals::steal() };
         let mut uart: LpUart<pins::A3, pins::A2> = LpUart::new(dp.LPUART, 9600, uart::Clk::Lse, &mut dp.RCC)
             .enable_rx(io_a.a3, cs)
             .enable_tx(io_a.a2, cs);
+
+        // Enable Rx and Tx interrupt
+        dp_dirty.LPUART.cr1.write(|w| {
+            w.tcie().set_bit();
+            w.rxneie().set_bit()
+        });
 
         // Set up RF Switch GPIOs
         let mut rf_sw_1 = Output::new(io_b.b8, &RFSW_GPIO_OUTPUT_ARGS, cs);
@@ -102,6 +110,7 @@ mod app {
                 uart,
             },
             Local {
+                dp: dp_dirty,
                 radio,
                 rf_sw_1,
                 rf_sw_2,
@@ -114,6 +123,7 @@ mod app {
         let recv_byte = ctx.shared.uart.lock(|uart| uart.read().unwrap());
 
         let mut packet_ended: bool = false;
+
         ctx.shared.uart_rx_q.lock(|queue| match recv_byte {
             SLIP_START => {
                 defmt::info!("UART packet started");
@@ -133,10 +143,12 @@ mod app {
             }
         });
 
-        if packet_ended {}
+        if packet_ended {
+
+        }
     }
 
-    #[task(binds = RADIO_IRQ_BUSY, local = [radio, rf_sw_1, rf_sw_2, was_tx: bool = false], shared = [uart_tx_q])]
+    #[task(binds = RADIO_IRQ_BUSY, local = [radio, rf_sw_1, rf_sw_2, was_tx: bool = false], shared = [uart_tx_q, uart])]
     fn radio_task(mut ctx: radio_task::Context) {
         let radio = ctx.local.radio;
         let rfsw_1 = ctx.local.rf_sw_1;
@@ -158,12 +170,24 @@ mod app {
             defmt::info!("radio: RxDone, handling...");
             rfsw_1.set_level_low();
             rfsw_2.set_level_low();
-            ctx.shared.uart_tx_q.lock(|q| {
-                handle_radio_rx_done(radio, irq, q).unwrap();
-            });
+            let queue = ctx.shared.uart_tx_q;
+            let uart = ctx.shared.uart;
 
-            // TODO: probably spawn UART Tx here
-            uart_tx::spawn().unwrap();
+            // Here I force a flush for now, maybe I should do interrupt-based Tx too...
+            (queue, uart).lock(|q, uart| {
+                handle_radio_rx_done(radio, irq, q).unwrap();
+                let tx_byte = match q.dequeue() {
+                    Some(b) => b,
+                    None => return,
+                };
+    
+                loop {
+                    match uart.write(tx_byte) {
+                        Ok(_) => break,
+                        Err(_) => continue,
+                    }
+                }
+            });
 
             // ...and then go back to Rx?
             rfsw_1.set_level_high();
@@ -175,25 +199,6 @@ mod app {
             rfsw_2.set_level_low();
             start_radio_rx(radio, 5000).unwrap();
         }
-    }
-
-    #[task(priority = 2, shared = [uart_tx_q, uart])]
-    async fn uart_tx(ctx: uart_tx::Context) {
-        let queue = ctx.shared.uart_tx_q;
-        let uart = ctx.shared.uart;
-        (queue, uart).lock(|q, uart| {
-            let tx_byte = match q.dequeue() {
-                Some(b) => b,
-                None => return,
-            };
-
-            loop {
-                match uart.write(tx_byte) {
-                    Ok(_) => break,
-                    Err(_) => continue,
-                }
-            }
-        });
     }
 
     #[task(priority = 2)]

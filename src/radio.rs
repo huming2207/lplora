@@ -1,8 +1,7 @@
 use stm32wlxx_hal::{
     spi::{Error, SgMiso, SgMosi},
     subghz::{
-        CalibrateImage, FallbackMode, Irq, LoRaModParams, LoRaPacketParams, LoRaSyncWord, Ocp, PaConfig, PacketType,
-        RegMode, RfFreq, StandbyClk, SubGhz, Timeout, TxParams,
+        CalibrateImage, CfgIrq, FallbackMode, Irq, IrqLine, LoRaModParams, LoRaPacketParams, LoRaSyncWord, Ocp, PaConfig, PacketType, RegMode, RfFreq, StandbyClk, SubGhz, Timeout, TxParams
     },
 };
 
@@ -11,6 +10,7 @@ use crate::{
     packet::{uart_pkt_encoder::UartPacketEncoder, UartPacketType},
 };
 
+const IRQ_CFG: CfgIrq = CfgIrq::new().irq_enable(IrqLine::Global, Irq::TxDone).irq_enable(IrqLine::Global, Irq::RxDone);
 const TX_BUF_OFFSET: u8 = 128;
 const RX_BUF_OFFSET: u8 = 0;
 
@@ -56,6 +56,7 @@ pub fn setup_radio(
 
     let rf_freq = RfFreq::from_frequency(freq);
     radio.set_rf_frequency(&rf_freq)?;
+    radio.set_irq_cfg(&IRQ_CFG)?;
     radio.set_standby(StandbyClk::Hse)?;
 
     Ok(())
