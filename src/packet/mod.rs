@@ -7,7 +7,7 @@ pub mod uart_pkt_encoder;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, defmt::Format)]
 pub enum UartPacketError {
-    ChecksumError,
+    CorruptedError,
     BufferFullError,
     EncodingError, // SLIP state invalid
     UnknownPacketError,
