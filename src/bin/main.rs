@@ -7,15 +7,19 @@ use lplora as _; // global logger + panicking-behavior + memory layout
 #[rtic::app(
     // TODO: Replace `some_hal::pac` with the path to the PAC
     device = stm32wlxx_hal::pac,
-    dispatchers = [DAC, USART2]
+    dispatchers = [DAC, USART2, USART1]
 )]
 mod app {
     use cortex_m::interrupt::CriticalSection;
     use cortex_m::prelude::*;
     use heapless::spsc::Queue;
     use lplora::constants::{CacheQueue, RFSW_GPIO_OUTPUT_ARGS, SLIP_END, SLIP_START};
-    use lplora::radio::{handle_radio_rx_done, start_radio_rx};
+    use lplora::packet::uart_pkt_decoder::UartPacketDecoder;
+    use lplora::packet::uart_pkt_encoder::UartPacketEncoder;
+    use lplora::packet::UartPacketType;
+    use lplora::radio::{handle_radio_rx_done, start_radio_rx, start_radio_tx};
     use stm32wlxx_hal::gpio::pins::{B8, C13};
+    use stm32wlxx_hal::pac::{Interrupt, NVIC};
     use stm32wlxx_hal::spi::{SgMiso, SgMosi};
     use stm32wlxx_hal::subghz::{Irq, SubGhz};
     use stm32wlxx_hal::{
@@ -28,17 +32,23 @@ mod app {
     // Shared resources go here
     #[shared]
     struct Shared {
+        #[lock_free]
         uart_tx_q: CacheQueue,
+
+        #[lock_free]
         radio_tx_q: CacheQueue,
+
+        #[lock_free]
         uart_rx_q: CacheQueue,
+
+        #[lock_free]
         radio_rx_q: CacheQueue,
-        uart: LpUart<pins::A3, pins::A2>,
     }
 
     // Local resources go here
     #[local]
     struct Local {
-        dp: Peripherals,
+        uart: LpUart<pins::A3, pins::A2>,
         radio: SubGhz<SgMiso, SgMosi>,
         rf_sw_1: Output<B8>,
         rf_sw_2: Output<C13>,
@@ -106,11 +116,9 @@ mod app {
                 radio_tx_q,
                 uart_rx_q,
                 radio_rx_q,
-
-                uart,
             },
             Local {
-                dp: dp_dirty,
+                uart,
                 radio,
                 rf_sw_1,
                 rf_sw_2,
@@ -118,38 +126,96 @@ mod app {
         )
     }
 
-    #[task(binds = LPUART1, shared = [uart_rx_q, uart])]
-    fn uart_task(mut ctx: uart_task::Context) {
-        let recv_byte = ctx.shared.uart.lock(|uart| uart.read().unwrap());
+    #[task(binds = LPUART1, shared = [uart_rx_q, uart_tx_q, radio_tx_q], local = [uart])]
+    fn uart_task(ctx: uart_task::Context) {
+        let uart_rx_queue = ctx.shared.uart_rx_q;
+        let uart_tx_queue = ctx.shared.uart_tx_q;
+        let radio_queue = ctx.shared.radio_tx_q;
+        let uart = ctx.local.uart;
 
-        let mut packet_ended: bool = false;
-
-        ctx.shared.uart_rx_q.lock(|queue| match recv_byte {
-            SLIP_START => {
-                defmt::info!("UART packet started");
-                while !queue.is_empty() {
-                    queue.dequeue().unwrap();
+        let dp = unsafe { Peripherals::steal() };
+        let isr = dp.LPUART.isr.read();
+        if isr.pe().bit_is_set() || isr.fe().bit_is_set() || isr.ne().bit_is_set() || isr.ore().bit_is_set() {
+            defmt::warn!("uart_task: LPUART_ISR indicate something screwed up: 0x{:x}", isr.bits());
+            dp.LPUART.icr.write(|w| {
+                w.pecf().set_bit();
+                w.fecf().set_bit();
+                w.ncf().set_bit();
+                w.orecf().set_bit()
+            });
+            return;
+        } else if isr.rxfne().bit_is_set() {
+            defmt::info!("uart_task: LPUART_ISR RXNE set!");
+            let mut packet_ended: bool = false;
+            let recv_byte = uart.read().unwrap();
+            match recv_byte {
+                SLIP_START => {
+                    defmt::info!("UART packet started");
+                    while !uart_rx_queue.is_empty() {
+                        uart_rx_queue.dequeue().unwrap();
+                    }
+    
+                    uart_rx_queue.enqueue(recv_byte).unwrap();
                 }
-
-                queue.enqueue(recv_byte).unwrap();
+                SLIP_END => {
+                    defmt::info!("UART packet ended");
+                    uart_rx_queue.enqueue(recv_byte).unwrap();
+                    packet_ended = true;
+                }
+                _ => {
+                    uart_rx_queue.enqueue(recv_byte).unwrap();
+                }
             }
-            SLIP_END => {
-                defmt::info!("UART packet ended");
-                queue.enqueue(recv_byte).unwrap();
-                packet_ended = true;
+    
+            if packet_ended {
+                let packet = match UartPacketDecoder::new(uart_rx_queue) {
+                    Ok(p) => p,
+                    Err(err) => {
+                        defmt::error!("Something wrong when decode: {:?}", err);
+                        return;
+                    },
+                };
+                
+                let (payload, len) = packet.get_payload();
+                match packet.get_type() {
+                    UartPacketType::RadioSendPacket => {
+                        defmt::info!("Got RadioSendPacket, len={}", len);
+                        for byte in &payload[0..(len as usize)] {
+                            match radio_queue.enqueue(*byte) {
+                                Ok(_) => continue,
+                                Err(b) => {
+                                    radio_queue.dequeue().unwrap();
+                                    radio_queue.enqueue(b).unwrap();
+                                },
+                            }
+                        }
+                        NVIC::pend(Interrupt::RADIO_IRQ_BUSY);
+                    }
+                    UartPacketType::RadioRecvLoRaPacket => todo!(),
+                    UartPacketType::Ping => {
+                        UartPacketEncoder::make_pong(uart_tx_queue);
+                        NVIC::pend(Interrupt::LPUART1);
+                    }
+                    _ => todo!(),
+                }
             }
-            _ => {
-                queue.enqueue(recv_byte).unwrap();
+        } else if isr.tc().bit_is_set() {
+            defmt::info!("uart_task: LPUART_ISR TC set!");
+            match uart_tx_queue.dequeue() {
+                Some(b) => uart.write(b).unwrap(),
+                None => return,
             }
-        });
-
-        if packet_ended {
-
+        } else { // Software triggered?
+            defmt::info!("uart_task: Software-triggered Tx!");
+            match uart_tx_queue.dequeue() {
+                Some(b) => uart.write(b).unwrap(),
+                None => return,
+            }
         }
     }
 
-    #[task(binds = RADIO_IRQ_BUSY, local = [radio, rf_sw_1, rf_sw_2, was_tx: bool = false], shared = [uart_tx_q, uart])]
-    fn radio_task(mut ctx: radio_task::Context) {
+    #[task(binds = RADIO_IRQ_BUSY, local = [radio, rf_sw_1, rf_sw_2, was_tx: bool = false], shared = [uart_tx_q, radio_tx_q])]
+    fn radio_task(ctx: radio_task::Context) {
         let radio = ctx.local.radio;
         let rfsw_1 = ctx.local.rf_sw_1;
         let rfsw_2 = ctx.local.rf_sw_2;
@@ -170,38 +236,45 @@ mod app {
             defmt::info!("radio: RxDone, handling...");
             rfsw_1.set_level_low();
             rfsw_2.set_level_low();
-            let queue = ctx.shared.uart_tx_q;
-            let uart = ctx.shared.uart;
-
-            // Here I force a flush for now, maybe I should do interrupt-based Tx too...
-            (queue, uart).lock(|q, uart| {
-                handle_radio_rx_done(radio, irq, q).unwrap();
-                let tx_byte = match q.dequeue() {
-                    Some(b) => b,
-                    None => return,
-                };
-    
-                loop {
-                    match uart.write(tx_byte) {
-                        Ok(_) => break,
-                        Err(_) => continue,
-                    }
-                }
-            });
+            let uart_tx_queue = ctx.shared.uart_tx_q;
+            handle_radio_rx_done(radio, irq, uart_tx_queue).unwrap();
 
             // ...and then go back to Rx?
             rfsw_1.set_level_high();
             rfsw_2.set_level_low();
             start_radio_rx(radio, 5000).unwrap();
+            NVIC::pend(Interrupt::LPUART1); // Let UART to send off the stuff received too
         } else if irq & Irq::TxDone.mask() != 0 {
             defmt::info!("radio: TxDone, re-enter Rx");
             rfsw_1.set_level_high();
             rfsw_2.set_level_low();
             start_radio_rx(radio, 5000).unwrap();
+        } else {
+            // Nothing in IRQ reading?? Maybe this is a manual triggered one?
+            rfsw_1.set_level_low();
+            rfsw_2.set_level_high();
+
+            let mut tx_buf: [u8; 256] = [0; 256];
+            let mut ctr: usize = 0;
+            loop {
+                match ctx.shared.radio_tx_q.dequeue() {
+                    Some(b) => {
+                        tx_buf[ctr] = b;
+                        ctr += 1;
+                        if ctr >= tx_buf.len() {
+                            break;
+                        }
+                    },
+                    None => break,
+                };
+            }
+
+            defmt::info!("radio: Tx'ing, len={}", ctr);
+            start_radio_tx(radio, &tx_buf[0..ctr], 0).unwrap();
         }
     }
 
-    #[task(priority = 2)]
+    #[task(priority = 1)]
     async fn radio_ctrl(mut ctx: radio_ctrl::Context) {}
 
     // Optional idle, can be removed if not needed.

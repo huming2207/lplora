@@ -54,6 +54,10 @@ impl UartPacketDecoder {
         self.pkt_type
     }
 
+    pub fn get_payload(&self) -> (&[u8], u16) {
+        (self.payload_buf.as_slice(), self.curr_payload_len)
+    }
+
     pub fn get_payload_len(&self) -> u16 {
         self.curr_payload_len
     }
