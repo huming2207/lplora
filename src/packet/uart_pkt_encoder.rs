@@ -13,6 +13,16 @@ pub struct UartPacketEncoder<'a> {
 }
 
 impl<'a> UartPacketEncoder<'a> {
+    pub fn make_ping(queue: &'a mut CacheQueue) {
+        let pkt = UartPacketEncoder::new(UartPacketType::Ping, queue);
+        pkt.finalize()
+    }
+
+    pub fn make_pong(queue: &'a mut CacheQueue) {
+        let pkt = UartPacketEncoder::new(UartPacketType::Pong, queue);
+        pkt.finalize()
+    }
+    
     pub fn new(pkt_type: UartPacketType, queue: &'a mut CacheQueue) -> UartPacketEncoder<'a> {
         let mut digest = CRC.digest();
         digest.update(&[pkt_type as u8]);

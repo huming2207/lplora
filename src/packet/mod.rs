@@ -18,8 +18,13 @@ pub enum UartPacketError {
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy, defmt::Format)]
 pub enum UartPacketType {
-    RadioSendPacket = 0x01,
-    RadioRecvLoRaPacket = 0x81,
+    Ping = 0x00,
+    Pong = 0x01,
+    Ack = 0x03,
+    Nack = 0x04,
+    RadioConfigure = 0x10,
+    RadioSendPacket = 0x41,
+    RadioRecvLoRaPacket = 0xC1,
 }
 
 impl TryFrom<u8> for UartPacketType {
