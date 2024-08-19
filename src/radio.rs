@@ -77,7 +77,7 @@ pub fn handle_radio_rx_done(
     irq: u16,
     rx_queue: &mut CacheQueue,
 ) -> Result<(), Error> {
-    if irq & Irq::Timeout.mask() == 0 && irq & Irq::RxDone.mask() != 0 {
+    if irq & Irq::RxDone.mask() != 0 {
         radio_encode_packet(radio, rx_queue)?;
         return Ok(());
     }
