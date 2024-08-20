@@ -14,15 +14,29 @@ pub struct UartPacketEncoder<'a> {
 
 impl<'a> UartPacketEncoder<'a> {
     pub fn make_ping(queue: &'a mut CacheQueue) {
-        let pkt = UartPacketEncoder::new(UartPacketType::Ping, queue);
+        let mut pkt = UartPacketEncoder::new(UartPacketType::Ping, queue);
+        pkt.add_packet_len(0);
         pkt.finalize()
     }
 
     pub fn make_pong(queue: &'a mut CacheQueue) {
-        let pkt = UartPacketEncoder::new(UartPacketType::Pong, queue);
+        let mut pkt = UartPacketEncoder::new(UartPacketType::Pong, queue);
+        pkt.add_packet_len(0);
         pkt.finalize()
     }
-    
+
+    pub fn make_ack(queue: &'a mut CacheQueue) {
+        let mut pkt = UartPacketEncoder::new(UartPacketType::Ack, queue);
+        pkt.add_packet_len(0);
+        pkt.finalize()
+    }
+
+    pub fn make_nack(queue: &'a mut CacheQueue) {
+        let mut pkt = UartPacketEncoder::new(UartPacketType::Nack, queue);
+        pkt.add_packet_len(0);
+        pkt.finalize()
+    }
+
     pub fn new(pkt_type: UartPacketType, queue: &'a mut CacheQueue) -> UartPacketEncoder<'a> {
         let mut digest = CRC.digest();
         digest.update(&[pkt_type as u8]);
@@ -42,6 +56,7 @@ impl<'a> UartPacketEncoder<'a> {
 
     pub fn add_packet_len(&mut self, pkt_len: usize) {
         let pkt_len_bytes: [u8; 2] = (pkt_len as u16).to_le_bytes();
+        self.digest.update(&pkt_len_bytes);
         slip_enqueue(self.queue, pkt_len_bytes[0]);
         slip_enqueue(self.queue, pkt_len_bytes[1]);
     }
