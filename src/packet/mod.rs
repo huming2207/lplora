@@ -2,6 +2,11 @@ use crc::Table;
 
 use crate::constants::{CacheQueue, SLIP_END, SLIP_ESC, SLIP_ESC_END, SLIP_ESC_ESC, SLIP_ESC_START, SLIP_START};
 
+pub mod radio_freq_cfg;
+pub mod radio_gfsk_cfg;
+pub mod radio_lora_cfg;
+pub mod radio_phy_cfg;
+pub mod radio_rx_cmd;
 pub mod uart_pkt_decoder;
 pub mod uart_pkt_encoder;
 
@@ -35,7 +40,6 @@ pub enum UartPacketType {
     Ack = 0x83,
     Nack = 0x84,
     RadioReceivedPacket = 0xC1,
-    RadioRecvLoRaPacket = 0xC1,
 }
 
 impl TryFrom<u8> for UartPacketType {
@@ -43,8 +47,8 @@ impl TryFrom<u8> for UartPacketType {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0x01 => Ok(Self::RadioSendPacket),
-            0x81 => Ok(Self::RadioRecvLoRaPacket),
+            0x01 => Ok(Self::RadioSend),
+            0x81 => Ok(Self::RadioReceivedPacket),
             _ => Err(UartPacketError::UnknownPacketError),
         }
     }
