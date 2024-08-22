@@ -34,6 +34,7 @@ pub enum UartPacketType {
     RadioGoIdle = 0x41,
     RadioSend = 0x42,
     RadioRecvStart = 0x43,
+    Restart = 0x7f,
 
     // Reply from module
     Pong = 0x80,
