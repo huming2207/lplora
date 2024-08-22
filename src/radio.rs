@@ -1,8 +1,7 @@
 use stm32wlxx_hal::{
     spi::{Error, SgMiso, SgMosi},
     subghz::{
-        CalibrateImage, CfgIrq, FallbackMode, Irq, IrqLine, LoRaModParams, LoRaPacketParams, LoRaSyncWord, Ocp,
-        PaConfig, PacketType, RegMode, RfFreq, StandbyClk, SubGhz, Timeout, TxParams,
+        CfgIrq, FallbackMode, Irq, IrqLine, Ocp, RegMode, StandbyClk, SubGhz, Timeout
     },
 };
 
@@ -13,8 +12,9 @@ use crate::{
 
 const IRQ_CFG: CfgIrq = CfgIrq::new()
     .irq_enable(IrqLine::Global, Irq::TxDone)
-    .irq_enable(IrqLine::Global, Irq::RxDone);
-const TX_BUF_OFFSET: u8 = 128;
+    .irq_enable(IrqLine::Global, Irq::RxDone)
+    .irq_enable(IrqLine::Global, Irq::Timeout);
+const TX_BUF_OFFSET: u8 = 0;
 const RX_BUF_OFFSET: u8 = 0;
 
 fn radio_encode_packet(radio: &mut SubGhz<SgMiso, SgMosi>, rx_queue: &mut CacheQueue) -> Result<(), Error> {
@@ -34,33 +34,14 @@ fn radio_encode_packet(radio: &mut SubGhz<SgMiso, SgMosi>, rx_queue: &mut CacheQ
 
 pub fn setup_radio(
     radio: &mut SubGhz<SgMiso, SgMosi>,
-    freq: u32,
-    pkt_params: LoRaPacketParams,
-    mod_params: LoRaModParams,
-    pa_cfg: PaConfig,
-    tx_params: TxParams,
-    sync_word: LoRaSyncWord,
 ) -> Result<(), Error> {
     radio.set_standby(StandbyClk::Rc)?;
     radio.set_tx_rx_fallback_mode(FallbackMode::StandbyHse)?;
 
+    radio.set_irq_cfg(&IRQ_CFG)?;
     radio.set_regulator_mode(RegMode::Smps)?;
     radio.set_buffer_base_address(TX_BUF_OFFSET, RX_BUF_OFFSET)?;
-    radio.set_pa_config(&pa_cfg)?;
     radio.set_pa_ocp(Ocp::Max140m)?;
-    radio.set_tx_params(&tx_params)?;
-
-    radio.set_packet_type(PacketType::LoRa)?;
-    radio.set_lora_sync_word(sync_word)?;
-    radio.set_lora_mod_params(&mod_params)?;
-    radio.set_lora_packet_params(&pkt_params)?;
-
-    radio.calibrate_image(CalibrateImage::ISM_902_928)?;
-
-    let rf_freq = RfFreq::from_frequency(freq);
-    radio.set_rf_frequency(&rf_freq)?;
-    radio.set_irq_cfg(&IRQ_CFG)?;
-    radio.set_standby(StandbyClk::Hse)?;
 
     Ok(())
 }
