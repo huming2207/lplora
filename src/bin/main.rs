@@ -22,9 +22,9 @@ mod app {
     use lplora::packet::uart_pkt_decoder::UartPacketDecoder;
     use lplora::packet::uart_pkt_encoder::UartPacketEncoder;
     use lplora::packet::UartPacketType;
-    use lplora::radio::{handle_radio_rx_done, start_radio_rx, start_radio_tx};
+    use lplora::radio::{handle_radio_rx_done, setup_radio, start_radio_rx, start_radio_tx};
     use stm32wlxx_hal::gpio::pins::{B8, C13};
-    use stm32wlxx_hal::pac::Interrupt;
+    use stm32wlxx_hal::pac::{Interrupt, NVIC};
     use stm32wlxx_hal::spi::{SgMiso, SgMosi};
     use stm32wlxx_hal::subghz::{Irq, StandbyClk, SubGhz};
     use stm32wlxx_hal::{
@@ -59,9 +59,9 @@ mod app {
 
     #[init]
     fn init(_: init::Context) -> (Shared, Local) {
-        defmt::info!("init");
+        defmt::info!("Init begin");
 
-        let mut dp = Peripherals::take().unwrap();
+        let mut dp = unsafe { Peripherals::steal() };
         let cs = unsafe { &CriticalSection::new() };
 
         unsafe {
@@ -85,6 +85,7 @@ mod app {
         let io_c: PortC = PortC::split(dp.GPIOC, &mut dp.RCC);
 
         // Enable LSE
+        dp.PWR.cr1.modify(|_, w| w.dbp().enabled());
         dp.RCC.bdcr.modify(|_, w| w.lseon().on().lsesysen().enabled());
         while dp.RCC.bdcr.read().lserdy().is_not_ready() {}
         while dp.RCC.bdcr.read().lsesysrdy().is_not_ready() {}
@@ -109,8 +110,9 @@ mod app {
         let radio_tx_q: CacheQueue = Queue::new();
 
         let mut radio = SubGhz::new(dp.SPI3, &mut dp.RCC);
+        setup_radio(&mut radio).unwrap();
 
-        start_radio_rx(&mut radio, 5000).unwrap();
+        defmt::info!("Init setup complete!");
 
         (
             Shared {
@@ -343,6 +345,9 @@ mod app {
                                 return;
                             }
                         };
+                    }
+                    UartPacketType::Restart => {
+                        cortex_m::peripheral::SCB::sys_reset();
                     }
                     _ => {
                         UartPacketEncoder::make_nack(uart_tx_queue);
