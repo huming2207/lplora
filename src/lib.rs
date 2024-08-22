@@ -18,14 +18,6 @@ fn panic() -> ! {
     cortex_m::asm::udf()
 }
 
-static COUNT: AtomicUsize = AtomicUsize::new(0);
-defmt::timestamp!("{=usize}", {
-    // NOTE(no-CAS) `timestamps` runs with interrupts disabled
-    let n = COUNT.load(Ordering::Relaxed);
-    COUNT.store(n + 1, Ordering::Relaxed);
-    n
-});
-
 /// Terminates the application and makes `probe-rs` exit with exit-code = 0
 pub fn exit() -> ! {
     loop {
