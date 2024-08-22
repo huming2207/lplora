@@ -40,9 +40,10 @@ codegen-units = 1
 debug = 2
 debug-assertions = false # <-
 incremental = false
-lto = 'fat'
-opt-level = "s" # <-
+lto = true
+opt-level = "z" # <-
 overflow-checks = false # <-
+panic = "abort"
 
 # cargo test --release
 [profile.bench]
