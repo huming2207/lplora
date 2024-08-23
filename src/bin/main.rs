@@ -7,7 +7,8 @@ use lplora as _; // global logger + panicking-behavior + memory layout
 #[rtic::app(
     // TODO: Replace `some_hal::pac` with the path to the PAC
     device = stm32wlxx_hal::pac,
-    dispatchers = [DAC, USART2, USART1]
+    dispatchers = [DAC, USART2, USART1],
+    peripherals = true,
 )]
 mod app {
     use cortex_m::interrupt::CriticalSection;
@@ -58,10 +59,10 @@ mod app {
     }
 
     #[init]
-    fn init(_: init::Context) -> (Shared, Local) {
+    fn init(ctx: init::Context) -> (Shared, Local) {
         defmt::info!("Init begin");
 
-        let mut dp = unsafe { Peripherals::steal() };
+        let mut dp = ctx.device;
         let cs = unsafe { &CriticalSection::new() };
 
         unsafe {
@@ -356,17 +357,27 @@ mod app {
                 }
             }
         } else if isr.tc().bit_is_set() {
-            defmt::info!("uart_task: LPUART_ISR TC set!");
+            defmt::info!("uart_task: LPUART_ISR TC set!?");
             match uart_tx_queue.dequeue() {
                 Some(b) => uart.write(b).unwrap(),
-                None => return,
+                None => {
+                    dp.LPUART.icr.write(|w| w.tccf().set_bit());
+                    dp.LPUART.cr1.write(|w| w.tcie().clear_bit());
+                    defmt::info!("uart_task: nothing left in Tx queue, TC cleared!");
+                    return;
+                }
             }
         } else {
             // Software triggered?
             defmt::info!("uart_task: Software-triggered Tx!");
             match uart_tx_queue.dequeue() {
                 Some(b) => uart.write(b).unwrap(),
-                None => return,
+                None => {
+                    dp.LPUART.icr.write(|w| w.tccf().set_bit());
+                    dp.LPUART.cr1.write(|w| w.tcie().clear_bit());
+                    defmt::info!("uart_task: nothing left in Tx queue, TC cleared!");
+                    return;
+                }
             }
         }
     }
@@ -440,6 +451,7 @@ mod app {
         defmt::info!("idle");
 
         loop {
+            cortex_m::asm::wfi();
             continue;
         }
     }
