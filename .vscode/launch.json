@@ -19,6 +19,7 @@
                 {
                     "coreIndex": 0,
                     "programBinary": "./target/thumbv7em-none-eabi/debug/main",
+                    "svdFile": "./STM32WLE5_CM4.svd",
                     "rttEnabled": true
                 }
             ]
