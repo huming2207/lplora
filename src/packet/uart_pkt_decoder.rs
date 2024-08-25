@@ -12,7 +12,8 @@ pub struct UartPacketDecoder {
 impl UartPacketDecoder {
     pub fn new(queue: &mut CacheQueue) -> Result<UartPacketDecoder, UartPacketError> {
         let mut buf: [u8; 300] = [0; 300];
-        slip_dequeue(queue, &mut buf)?;
+        let mut decoded_len: usize = 0;
+        slip_dequeue(queue, &mut buf, &mut decoded_len)?;
 
         let pkt_type = UartPacketType::try_from(buf[0])?;
         let payload_len_bytes: [u8; 2] = [buf[0], buf[1]];
@@ -23,12 +24,12 @@ impl UartPacketDecoder {
         }
 
         let crc_bytes: [u8; 2] = [
-            buf[(curr_payload_len - 2) as usize],
-            buf[(curr_payload_len - 1) as usize],
+            buf[(decoded_len - 2) as usize],
+            buf[(decoded_len - 1) as usize],
         ];
         let expected_crc = u16::from_le_bytes(crc_bytes);
         let mut digest = CRC.digest();
-        digest.update(&buf[0..(curr_payload_len - 2) as usize]);
+        digest.update(&buf[0..(decoded_len - 2) as usize]);
         let actual_crc = digest.finalize();
         if actual_crc != expected_crc {
             defmt::error!(

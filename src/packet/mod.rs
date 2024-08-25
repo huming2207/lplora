@@ -48,8 +48,17 @@ impl TryFrom<u8> for UartPacketType {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0x01 => Ok(Self::RadioSend),
-            0x81 => Ok(Self::RadioReceivedPacket),
+            0x00 => Ok(Self::Ping),
+            0x10 => Ok(Self::RadioPhyConfig),
+            0x11 => Ok(Self::RadioFreqConfig),
+            0x12 => Ok(Self::RadioLoraConfig),
+            0x13 => Ok(Self::RadioGfskConfig),
+            0x20 => Ok(Self::EnterSleepStop2),
+            0x40 => Ok(Self::RadioGoSleep),
+            0x41 => Ok(Self::RadioGoIdle),
+            0x42 => Ok(Self::RadioSend),
+            0x43 => Ok(Self::RadioRecvStart),
+            0x7f => Ok(Self::Restart),
             _ => Err(UartPacketError::UnknownPacketError),
         }
     }
@@ -85,7 +94,7 @@ fn slip_enqueue(queue: &mut CacheQueue, b: u8) {
     }
 }
 
-fn slip_dequeue(queue: &mut CacheQueue, out: &mut [u8]) -> Result<(), UartPacketError> {
+fn slip_dequeue(queue: &mut CacheQueue, out: &mut [u8], len_out: &mut usize) -> Result<(), UartPacketError> {
     let mut begin: bool = false;
     let mut ctr: usize = 0;
 
@@ -148,6 +157,7 @@ fn slip_dequeue(queue: &mut CacheQueue, out: &mut [u8]) -> Result<(), UartPacket
     }
 
     if !begin {
+        *len_out = ctr;
         Ok(())
     } else {
         Err(UartPacketError::EncodingError)
