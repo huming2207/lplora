@@ -97,13 +97,17 @@ mod app {
             .enable_tx(io_a.a2, cs);
 
         // Enable Rx and Tx interrupt
-        dp_dirty.LPUART.cr1.modify(|_,w| {
-            w
-                .te().set_bit()
-                .re().set_bit()
-                .tcie().set_bit()
-                .rxneie().set_bit()
-                .fifoen().clear_bit() // We DO NOT want FIFO mode for now
+        dp_dirty.LPUART.cr1.modify(|_, w| {
+            w.te()
+                .set_bit()
+                .re()
+                .set_bit()
+                .tcie()
+                .set_bit()
+                .rxneie()
+                .set_bit()
+                .fifoen()
+                .clear_bit() // We DO NOT want FIFO mode for now
         });
 
         // Set up RF Switch GPIOs
@@ -224,7 +228,7 @@ mod app {
                         };
                     }
                     UartPacketType::RadioGoSleep => {
-                        match radio.lock(|r| unsafe { r.set_sleep(SLEEP_CFG) } ) {
+                        match radio.lock(|r| unsafe { r.set_sleep(SLEEP_CFG) }) {
                             Ok(_) => {
                                 UartPacketEncoder::make_ack(uart_tx_queue);
                                 rtic::pend(Interrupt::LPUART1);
@@ -247,7 +251,7 @@ mod app {
                             }
                         };
 
-                        match radio.lock(|r| cmd.configure_radio(r) ) {
+                        match radio.lock(|r| cmd.configure_radio(r)) {
                             Ok(_) => {
                                 UartPacketEncoder::make_ack(uart_tx_queue);
                                 rtic::pend(Interrupt::LPUART1);

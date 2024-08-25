@@ -1,4 +1,7 @@
-use stm32wlxx_hal::{spi::{SgMiso, SgMosi}, subghz::{self, SubGhz}};
+use stm32wlxx_hal::{
+    spi::{SgMiso, SgMosi},
+    subghz::{self, SubGhz},
+};
 
 use crate::{packet::UartPacketError, radio::start_radio_rx};
 

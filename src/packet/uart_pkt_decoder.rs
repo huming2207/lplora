@@ -23,10 +23,7 @@ impl UartPacketDecoder {
             return Err(UartPacketError::CorruptedError);
         }
 
-        let crc_bytes: [u8; 2] = [
-            buf[(decoded_len - 2) as usize],
-            buf[(decoded_len - 1) as usize],
-        ];
+        let crc_bytes: [u8; 2] = [buf[(decoded_len - 2) as usize], buf[(decoded_len - 1) as usize]];
         let expected_crc = u16::from_le_bytes(crc_bytes);
         let mut digest = CRC.digest();
         digest.update(&buf[0..(decoded_len - 2) as usize]);

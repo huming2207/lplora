@@ -1,5 +1,8 @@
 use heapless::spsc::Queue;
-use stm32wlxx_hal::{gpio, subghz::{SleepCfg, Startup}};
+use stm32wlxx_hal::{
+    gpio,
+    subghz::{SleepCfg, Startup},
+};
 
 pub const RFSW_GPIO_OUTPUT_ARGS: gpio::OutputArgs = gpio::OutputArgs {
     level: gpio::PinState::Low,

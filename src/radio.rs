@@ -1,8 +1,6 @@
 use stm32wlxx_hal::{
     spi::{Error, SgMiso, SgMosi},
-    subghz::{
-        CfgIrq, FallbackMode, Irq, IrqLine, Ocp, RegMode, StandbyClk, SubGhz, Timeout
-    },
+    subghz::{CfgIrq, FallbackMode, Irq, IrqLine, Ocp, RegMode, StandbyClk, SubGhz, Timeout},
 };
 
 use crate::{
@@ -32,9 +30,7 @@ fn radio_encode_packet(radio: &mut SubGhz<SgMiso, SgMosi>, rx_queue: &mut CacheQ
     Ok(())
 }
 
-pub fn setup_radio(
-    radio: &mut SubGhz<SgMiso, SgMosi>,
-) -> Result<(), Error> {
+pub fn setup_radio(radio: &mut SubGhz<SgMiso, SgMosi>) -> Result<(), Error> {
     radio.set_standby(StandbyClk::Rc)?;
     radio.set_tx_rx_fallback_mode(FallbackMode::StandbyHse)?;
 
