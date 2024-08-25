@@ -97,9 +97,13 @@ mod app {
             .enable_tx(io_a.a2, cs);
 
         // Enable Rx and Tx interrupt
-        dp_dirty.LPUART.cr1.write(|w| {
-            w.tcie().set_bit();
-            w.rxneie().set_bit()
+        dp_dirty.LPUART.cr1.modify(|_,w| {
+            w
+                .te().set_bit()
+                .re().set_bit()
+                .tcie().set_bit()
+                .rxneie().set_bit()
+                .fifoen().clear_bit() // We DO NOT want FIFO mode for now
         });
 
         // Set up RF Switch GPIOs
@@ -148,9 +152,10 @@ mod app {
             });
             return;
         } else if isr.rxfne().bit_is_set() {
-            defmt::info!("uart_task: LPUART_ISR RXNE set!");
+            defmt::trace!("uart_task: LPUART_ISR RXNE set!");
             let mut packet_ended: bool = false;
             let recv_byte = uart.read().unwrap();
+            defmt::trace!("Rx got 0x{:02x}", recv_byte);
             match recv_byte {
                 SLIP_START => {
                     defmt::info!("UART packet started");
@@ -357,25 +362,26 @@ mod app {
                 }
             }
         } else if isr.tc().bit_is_set() {
-            defmt::info!("uart_task: LPUART_ISR TC set!?");
+            defmt::trace!("uart_task: LPUART_ISR TC set!?");
             match uart_tx_queue.dequeue() {
                 Some(b) => uart.write(b).unwrap(),
                 None => {
                     dp.LPUART.icr.write(|w| w.tccf().set_bit());
-                    dp.LPUART.cr1.write(|w| w.tcie().clear_bit());
-                    defmt::info!("uart_task: nothing left in Tx queue, TC cleared!");
+                    dp.LPUART.cr1.modify(|_, w| w.tcie().clear_bit());
+                    defmt::trace!("uart_task: nothing left in Tx queue, TC cleared!");
                     return;
                 }
             }
         } else {
             // Software triggered?
             defmt::info!("uart_task: Software-triggered Tx!");
+            dp.LPUART.cr1.modify(|_, w| w.tcie().set_bit());
             match uart_tx_queue.dequeue() {
                 Some(b) => uart.write(b).unwrap(),
                 None => {
                     dp.LPUART.icr.write(|w| w.tccf().set_bit());
-                    dp.LPUART.cr1.write(|w| w.tcie().clear_bit());
-                    defmt::info!("uart_task: nothing left in Tx queue, TC cleared!");
+                    dp.LPUART.cr1.modify(|_, w| w.tcie().clear_bit());
+                    defmt::trace!("uart_task: nothing left in Tx queue, TC cleared!");
                     return;
                 }
             }
@@ -451,7 +457,7 @@ mod app {
         defmt::info!("idle");
 
         loop {
-            cortex_m::asm::wfi();
+            //cortex_m::asm::wfi();
             continue;
         }
     }
