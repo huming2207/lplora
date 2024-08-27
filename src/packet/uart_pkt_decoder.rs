@@ -16,7 +16,7 @@ impl UartPacketDecoder {
         slip_dequeue(queue, &mut buf, &mut decoded_len)?;
 
         let pkt_type = UartPacketType::try_from(buf[0])?;
-        let payload_len_bytes: [u8; 2] = [buf[0], buf[1]];
+        let payload_len_bytes: [u8; 2] = [buf[1], buf[2]];
         let curr_payload_len = u16::from_le_bytes(payload_len_bytes);
         if buf.len() < curr_payload_len as usize {
             defmt::error!("UartPacketDecoder: invalid length: {}", curr_payload_len);
@@ -40,6 +40,8 @@ impl UartPacketDecoder {
         if curr_payload_len > (buf.len() as u16) {
             return Err(UartPacketError::BufferFullError);
         }
+
+        buf.copy_within(3.., 0);
 
         Ok(UartPacketDecoder {
             pkt_type,
