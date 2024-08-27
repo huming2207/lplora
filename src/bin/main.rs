@@ -25,7 +25,7 @@ mod app {
     use lplora::packet::UartPacketType;
     use lplora::radio::{handle_radio_rx_done, setup_radio, start_radio_rx, start_radio_tx};
     use stm32wlxx_hal::gpio::pins::{B8, C13};
-    use stm32wlxx_hal::pac::{Interrupt, NVIC};
+    use stm32wlxx_hal::pac::Interrupt;
     use stm32wlxx_hal::spi::{SgMiso, SgMosi};
     use stm32wlxx_hal::subghz::{Irq, StandbyClk, SubGhz};
     use stm32wlxx_hal::{
