@@ -20,8 +20,8 @@ impl TryFrom<UartPacketDecoder> for RadioLoraConfigurator {
     fn try_from(value: UartPacketDecoder) -> Result<Self, Self::Error> {
         let (buf, len) = value.get_payload();
 
-        if len < (6 + 5 + 2) {
-            defmt::error!("RadioLoraConfigurator: require 13 bytes while got {} bytes", len);
+        if len < 12 {
+            defmt::error!("RadioLoraConfigurator: require 12 bytes while got {} bytes", len);
             return Err(UartPacketError::CorruptedError);
         }
 
@@ -106,6 +106,7 @@ impl RadioLoraConfigurator {
         radio.set_lora_mod_params(&self.lora_mod)?;
         radio.set_lora_packet_params(&self.pkt_params)?;
 
+        defmt::info!("RadioLoraConfigurator: LoRa config OK, sync word {:x} {:x}, mod: {:?}", self.sync_word[0], self.sync_word[1], self.lora_mod);
         Ok(())
     }
 }
