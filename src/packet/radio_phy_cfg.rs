@@ -74,7 +74,12 @@ impl RadioPhyConfigurator {
             radio.set_rx_gain(subghz::PMode::PowerSaving)?;
         }
 
-        defmt::info!("RadioPhyConfigurator: config OK, PA config: {:?}, OCP: {:?}, TxParams: {:?}", self.pa_config, self.ocp, self.tx_params);
+        defmt::info!(
+            "RadioPhyConfigurator: config OK, PA config: {:?}, OCP: {:?}, TxParams: {:?}",
+            self.pa_config,
+            self.ocp,
+            self.tx_params
+        );
         Ok(())
     }
 }

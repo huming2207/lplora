@@ -106,7 +106,12 @@ impl RadioLoraConfigurator {
         radio.set_lora_mod_params(&self.lora_mod)?;
         radio.set_lora_packet_params(&self.pkt_params)?;
 
-        defmt::info!("RadioLoraConfigurator: LoRa config OK, sync word {:x} {:x}, mod: {:?}", self.sync_word[0], self.sync_word[1], self.lora_mod);
+        defmt::info!(
+            "RadioLoraConfigurator: LoRa config OK, sync word {:x} {:x}, mod: {:?}",
+            self.sync_word[0],
+            self.sync_word[1],
+            self.lora_mod
+        );
         Ok(())
     }
 }
