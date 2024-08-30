@@ -48,8 +48,19 @@ impl TryFrom<UartPacketDecoder> for RadioPhyConfigurator {
             }
         };
 
-        let tx_params = TxParams::new().set_ramp_time(ramp_time).set_power(buf[3]);
         let rx_boost = buf[5] != 0;
+        defmt::info!(
+            "RadioPhyCfg decode: PaDutyCycle={:?}; HpMax={:?}; PaSel={:?}; RampTime={:?}; Power={:?}dB; RxBoost={:?}",
+            buf[0],
+            buf[1],
+            buf[2],
+            ramp_time,
+            buf[3],
+            rx_boost
+        );
+
+        let tx_params = TxParams::new().set_ramp_time(ramp_time).set_power(buf[3]);
+
         Ok(RadioPhyConfigurator {
             tx_params,
             pa_config,

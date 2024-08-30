@@ -90,6 +90,22 @@ impl TryFrom<UartPacketDecoder> for RadioLoraConfigurator {
             .set_ldro_en(buf[9] != 0);
         let sync_word: [u8; 2] = buf[10..=11].try_into().unwrap();
 
+        defmt::info!(
+            "RadioLoraCfg decode: preamble_len={:?}, header_type={:?}, payload_len={:?}, crc={:?} inverted_iq={:?}",
+            preamble_len,
+            header_type,
+            buf[3],
+            buf[4] != 0,
+            buf[5] != 0
+        );
+        defmt::info!(
+            "RadioLoraCfg decode: SF={:?} BW={:?} CR={:?} LDRO={:?}; SyncWord={:?}",
+            sf,
+            bw,
+            cr,
+            buf[9] != 0,
+            sync_word
+        );
         Ok(RadioLoraConfigurator {
             lora_mod,
             pkt_params,
