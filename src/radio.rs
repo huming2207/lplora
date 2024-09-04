@@ -1,6 +1,6 @@
 use stm32wlxx_hal::{
     spi::{Error, SgMiso, SgMosi},
-    subghz::{CfgIrq, FallbackMode, Irq, IrqLine, Ocp, RegMode, StandbyClk, SubGhz, Timeout},
+    subghz::{CfgIrq, FallbackMode, Irq, Ocp, RegMode, StandbyClk, SubGhz, Timeout},
 };
 
 use crate::{
@@ -9,9 +9,11 @@ use crate::{
 };
 
 const IRQ_CFG: CfgIrq = CfgIrq::new()
-    .irq_enable(IrqLine::Global, Irq::TxDone)
-    .irq_enable(IrqLine::Global, Irq::RxDone)
-    .irq_enable(IrqLine::Global, Irq::Timeout);
+    .irq_enable_all(Irq::TxDone)
+    .irq_enable_all(Irq::RxDone)
+    .irq_enable_all(Irq::Timeout)
+    .irq_enable_all(Irq::HeaderErr)
+    .irq_enable_all(Irq::Err);
 const TX_BUF_OFFSET: u8 = 0;
 const RX_BUF_OFFSET: u8 = 0;
 

@@ -42,10 +42,9 @@ mod app {
         uart_tx_q: CacheQueue,
 
         #[lock_free]
-        radio_tx_q: CacheQueue,
-
-        #[lock_free]
         uart_rx_q: CacheQueue,
+        rf_sw_1: Output<B8>,
+        rf_sw_2: Output<C13>,
 
         radio: SubGhz<SgMiso, SgMosi>,
     }
@@ -54,8 +53,6 @@ mod app {
     #[local]
     struct Local {
         uart: LpUart<pins::A3, pins::A2>,
-        rf_sw_1: Output<B8>,
-        rf_sw_2: Output<C13>,
     }
 
     #[init]
@@ -116,7 +113,6 @@ mod app {
 
         let uart_tx_q: CacheQueue = Queue::new();
         let uart_rx_q: CacheQueue = Queue::new();
-        let radio_tx_q: CacheQueue = Queue::new();
 
         let mut radio = SubGhz::new(dp.SPI3, &mut dp.RCC);
         setup_radio(&mut radio).unwrap();
@@ -127,18 +123,18 @@ mod app {
             Shared {
                 radio,
                 uart_tx_q,
-                radio_tx_q,
                 uart_rx_q,
+                rf_sw_1,
+                rf_sw_2,
             },
-            Local { uart, rf_sw_1, rf_sw_2 },
+            Local { uart },
         )
     }
 
-    #[task(binds = LPUART1, shared = [uart_rx_q, uart_tx_q, radio_tx_q, radio], local = [uart])]
+    #[task(binds = LPUART1, shared = [uart_rx_q, uart_tx_q, radio, rf_sw_1, rf_sw_2], local = [uart])]
     fn uart_task(ctx: uart_task::Context) {
         let uart_rx_queue = ctx.shared.uart_rx_q;
         let uart_tx_queue = ctx.shared.uart_tx_q;
-        let radio_queue = ctx.shared.radio_tx_q;
         let uart = ctx.local.uart;
 
         let dp = unsafe { Peripherals::steal() };
@@ -193,20 +189,16 @@ mod app {
                 match packet.get_type() {
                     UartPacketType::RadioSend => {
                         defmt::info!("Got RadioSendPacket, len={}", len);
-                        for byte in &payload[0..(len as usize)] {
-                            match radio_queue.enqueue(*byte) {
-                                Ok(_) => continue,
-                                Err(b) => {
-                                    radio_queue.dequeue().unwrap();
-                                    radio_queue.enqueue(b).unwrap();
-                                }
-                            }
-                        }
-
-                        rtic::pend(Interrupt::RADIO_IRQ_BUSY);
+                        (ctx.shared.rf_sw_1, ctx.shared.rf_sw_2).lock(|sw1, sw2| {
+                            sw1.set_level_low();
+                            sw2.set_level_high();
+                        });
+                        radio
+                            .lock(|r| start_radio_tx(r, &payload[0..(len as usize)], 5000))
+                            .unwrap();
 
                         UartPacketEncoder::make_ack(uart_tx_queue);
-                        rtic::pend(Interrupt::LPUART1); // Can we actually do this (two pends)???
+                        //rtic::pend(Interrupt::LPUART1); // Can we actually do this (two pends)???
                     }
                     UartPacketType::Ping => {
                         defmt::info!("Someone ping me!");
@@ -392,11 +384,10 @@ mod app {
         }
     }
 
-    #[task(binds = RADIO_IRQ_BUSY, local = [rf_sw_1, rf_sw_2, was_tx: bool = false], shared = [uart_tx_q, radio_tx_q, radio])]
+    #[task(binds = RADIO_IRQ_BUSY, local = [was_tx: bool = false], shared = [uart_tx_q, radio, rf_sw_1, rf_sw_2])]
     fn radio_task(ctx: radio_task::Context) {
         let mut radio = ctx.shared.radio;
-        let rfsw_1 = ctx.local.rf_sw_1;
-        let rfsw_2 = ctx.local.rf_sw_2;
+
         let was_tx = ctx.local.was_tx;
         let irq = radio.lock(|r| {
             let (_, irq) = r.irq_status().unwrap();
@@ -409,49 +400,35 @@ mod app {
                 defmt::error!("radio: TxTimeout! Something fucked?");
             } else {
                 defmt::info!("radio: RxTimeout! Re-enter Rx");
-                rfsw_1.set_level_high();
-                rfsw_2.set_level_low();
+                (ctx.shared.rf_sw_1, ctx.shared.rf_sw_2).lock(|sw1, sw2| {
+                    sw1.set_level_high();
+                    sw2.set_level_low();
+                });
+
                 radio.lock(|r| start_radio_rx(r, 5000).unwrap());
             }
         } else if irq & Irq::RxDone.mask() != 0 {
             defmt::info!("radio: RxDone, handling...");
-            rfsw_1.set_level_low();
-            rfsw_2.set_level_low();
             let uart_tx_queue = ctx.shared.uart_tx_q;
             radio.lock(|r| handle_radio_rx_done(r, irq, uart_tx_queue).unwrap());
 
             // ...and then go back to Rx?
-            rfsw_1.set_level_high();
-            rfsw_2.set_level_low();
+            (ctx.shared.rf_sw_1, ctx.shared.rf_sw_2).lock(|sw1, sw2| {
+                sw1.set_level_high();
+                sw2.set_level_low();
+            });
             radio.lock(|r| start_radio_rx(r, 5000).unwrap());
             rtic::pend(Interrupt::LPUART1); // Let UART to send off the stuff received too
         } else if irq & Irq::TxDone.mask() != 0 {
             defmt::info!("radio: TxDone, re-enter Rx");
-            rfsw_1.set_level_high();
-            rfsw_2.set_level_low();
+            (ctx.shared.rf_sw_1, ctx.shared.rf_sw_2).lock(|sw1, sw2| {
+                sw1.set_level_high();
+                sw2.set_level_low();
+            });
             radio.lock(|r| start_radio_rx(r, 5000).unwrap());
         } else {
             // Nothing in IRQ reading?? Maybe this is a manual triggered one?
-            rfsw_1.set_level_low();
-            rfsw_2.set_level_high();
-
-            let mut tx_buf: [u8; 256] = [0; 256];
-            let mut ctr: usize = 0;
-            loop {
-                match ctx.shared.radio_tx_q.dequeue() {
-                    Some(b) => {
-                        tx_buf[ctr] = b;
-                        ctr += 1;
-                        if ctr >= tx_buf.len() {
-                            break;
-                        }
-                    }
-                    None => break,
-                };
-            }
-
-            defmt::info!("radio: Tx'ing, len={}", ctr);
-            radio.lock(|r| start_radio_tx(r, &tx_buf[0..ctr], 0).unwrap());
+            defmt::warn!("SubGhz IRQ triggered while nothing needed?");
         }
     }
 

@@ -30,6 +30,7 @@ impl TryFrom<UartPacketDecoder> for RadioRxCommand {
 
 impl RadioRxCommand {
     pub fn configure_radio(&self, radio: &mut SubGhz<SgMiso, SgMosi>) -> Result<(), subghz::Error> {
+        defmt::info!("RadioRxCommand: trigger Rx start, timeout={}ms", self.timeout_ms);
         start_radio_rx(radio, self.timeout_ms)?;
         Ok(())
     }
