@@ -22,11 +22,11 @@ fn radio_encode_packet(radio: &mut SubGhz<SgMiso, SgMosi>, rx_queue: &mut CacheQ
 
     let mut output_buf: [u8; 256] = [0; 256];
     let (_, data_len, ptr) = radio.rx_buffer_status()?;
-    radio.read_buffer(ptr, output_buf.as_mut_slice())?;
+    radio.read_buffer(ptr, &mut output_buf[0..(data_len as usize)])?;
 
     defmt::info!("radio: RxDone, got {:?}; len={}", pkt_status, data_len);
     let mut encoder = UartPacketEncoder::new(UartPacketType::RadioReceivedPacket, rx_queue);
-    encoder.add_payload_with_lora_status(output_buf.as_slice(), data_len, pkt_status);
+    encoder.add_payload_with_lora_status(&output_buf[0..(data_len as usize)], data_len, pkt_status);
     encoder.finalize();
 
     Ok(())
