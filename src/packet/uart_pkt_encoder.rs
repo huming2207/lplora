@@ -65,14 +65,14 @@ impl<'a> UartPacketEncoder<'a> {
         let pkt_rssi = cmp::max(pkt_status.signal_rssi_pkt().to_integer(), 0);
         self.digest.update(&[(pkt_rssi * -1) as u8]);
 
-        let snr = cmp::max(pkt_status.snr_pkt().to_integer(), 0);
-        self.digest.update(&[(snr * -1) as u8]);
+        let snr = cmp::max(pkt_status.snr_pkt().to_integer() - 30, 0);
+        self.digest.update(&[((snr - 30) * -1) as u8]);
 
         for b in payload {
             self.digest.update(&[*b]);
         }
 
-        self.add_packet_len((2 + data_len as usize + 2) as usize); // 2 bytes of CRC, 2 bytes of RSSI and SNR, plus data length
+        self.add_packet_len((2 + data_len as usize) as usize); // 2 bytes of RSSI and SNR, plus data length
 
         slip_enqueue(self.queue, (pkt_rssi * -1) as u8);
         slip_enqueue(self.queue, (snr * -1) as u8);
