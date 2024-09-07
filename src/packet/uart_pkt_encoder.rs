@@ -1,5 +1,3 @@
-use core::cmp;
-
 use crc::Digest;
 use stm32wlxx_hal::subghz::LoRaPacketStatus;
 
@@ -63,7 +61,7 @@ impl<'a> UartPacketEncoder<'a> {
 
     pub fn add_payload_with_lora_status(&mut self, payload: &[u8], data_len: u8, pkt_status: LoRaPacketStatus) {
         self.add_packet_len((2 + data_len as usize) as usize); // 2 bytes of RSSI and SNR, plus data length
-        
+
         let pkt_rssi = pkt_status.signal_rssi_pkt().to_integer();
         let pkt_rssi_bytes: [u8; 2] = pkt_rssi.to_le_bytes();
         self.digest.update(&pkt_rssi_bytes);
