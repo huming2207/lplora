@@ -62,20 +62,24 @@ impl<'a> UartPacketEncoder<'a> {
     }
 
     pub fn add_payload_with_lora_status(&mut self, payload: &[u8], data_len: u8, pkt_status: LoRaPacketStatus) {
-        let pkt_rssi = cmp::max(pkt_status.signal_rssi_pkt().to_integer(), 0);
-        self.digest.update(&[(pkt_rssi * -1) as u8]);
+        self.add_packet_len((2 + data_len as usize) as usize); // 2 bytes of RSSI and SNR, plus data length
+        
+        let pkt_rssi = pkt_status.signal_rssi_pkt().to_integer();
+        let pkt_rssi_bytes: [u8; 2] = pkt_rssi.to_le_bytes();
+        self.digest.update(&pkt_rssi_bytes);
 
-        let snr = cmp::max(pkt_status.snr_pkt().to_integer() - 30, 0);
-        self.digest.update(&[((snr - 30) * -1) as u8]);
+        let snr = pkt_status.snr_pkt().to_integer();
+        let snr_bytes: [u8; 2] = snr.to_le_bytes();
+        self.digest.update(&snr_bytes);
 
         for b in payload {
             self.digest.update(&[*b]);
         }
 
-        self.add_packet_len((2 + data_len as usize) as usize); // 2 bytes of RSSI and SNR, plus data length
-
-        slip_enqueue(self.queue, (pkt_rssi * -1) as u8);
-        slip_enqueue(self.queue, (snr * -1) as u8);
+        slip_enqueue(self.queue, pkt_rssi_bytes[0]);
+        slip_enqueue(self.queue, pkt_rssi_bytes[1]);
+        slip_enqueue(self.queue, snr_bytes[0]);
+        slip_enqueue(self.queue, snr_bytes[1]);
 
         for b in payload {
             slip_enqueue(self.queue, *b);
