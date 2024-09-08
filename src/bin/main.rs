@@ -11,6 +11,7 @@ use lplora as _; // global logger + panicking-behavior + memory layout
     peripherals = true,
 )]
 mod app {
+    use cortex_m::asm::wfi;
     use cortex_m::interrupt::CriticalSection;
     use cortex_m::prelude::*;
     use heapless::spsc::Queue;
@@ -23,9 +24,11 @@ mod app {
     use lplora::packet::uart_pkt_decoder::UartPacketDecoder;
     use lplora::packet::uart_pkt_encoder::UartPacketEncoder;
     use lplora::packet::UartPacketType;
+    use lplora::power::enter_stop2_mode;
     use lplora::radio::{handle_radio_rx_done, setup_radio, start_radio_rx, start_radio_tx};
     use stm32wlxx_hal::gpio::pins::{B8, C13};
     use stm32wlxx_hal::pac::Interrupt;
+    use stm32wlxx_hal::pwr::{enter_lprun_msi, LprunRange};
     use stm32wlxx_hal::spi::{SgMiso, SgMosi};
     use stm32wlxx_hal::subghz::{Irq, StandbyClk, SubGhz};
     use stm32wlxx_hal::{
@@ -103,9 +106,19 @@ mod app {
                 .set_bit()
                 .rxneie()
                 .set_bit()
+                .uesm()
+                .set_bit()
                 .fifoen()
                 .clear_bit() // We DO NOT want FIFO mode for now
         });
+
+        // Enable debug domain in STOP mode
+        if cfg!(debug_assertions) {
+            defmt::info!("Enable debug at STOP mode");
+            dp.DBGMCU.cr.modify(|_, w| w.dbg_stop().set_bit());
+        } else {
+            dp.DBGMCU.cr.modify(|_, w| w.dbg_stop().clear_bit());
+        }
 
         // Set up RF Switch GPIOs
         let rf_sw_1 = Output::new(io_b.b8, &RFSW_GPIO_OUTPUT_ARGS, cs);
@@ -116,6 +129,10 @@ mod app {
 
         let mut radio = SubGhz::new(dp.SPI3, &mut dp.RCC);
         setup_radio(&mut radio).unwrap();
+
+        cortex_m::interrupt::free(|cs| unsafe {
+            enter_lprun_msi(&mut dp.FLASH, &mut dp.PWR, &mut dp.RCC, LprunRange::Range1M, cs)
+        });
 
         defmt::info!("Init setup complete!");
 
@@ -351,6 +368,9 @@ mod app {
                     UartPacketType::Restart => {
                         cortex_m::peripheral::SCB::sys_reset();
                     }
+                    UartPacketType::EnterSleepStop2 => {
+                        enter_stop2_mode();
+                    }
                     _ => {
                         UartPacketEncoder::make_nack(uart_tx_queue);
                         rtic::pend(Interrupt::LPUART1);
@@ -436,8 +456,8 @@ mod app {
     #[idle]
     fn idle(_: idle::Context) -> ! {
         loop {
-            defmt::trace!("idle");
-            cortex_m::asm::wfi();
+            //enter_stop2_mode();
+            wfi();
             continue;
         }
     }

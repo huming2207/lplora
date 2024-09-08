@@ -7,6 +7,7 @@ use stm32wlxx_hal as _; // memory layout
 
 pub mod constants;
 pub mod packet;
+pub mod power;
 pub mod radio;
 
 // same panicking *behavior* as `panic-probe` but doesn't print a panic message
