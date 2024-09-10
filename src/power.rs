@@ -7,7 +7,6 @@ use stm32wlxx_hal::{
 const SCB_SCR_SLEEPDEEP: u32 = 0x1 << 2;
 
 pub fn enter_stop2_mode() {
-    cortex_m::interrupt::disable();
     unsafe {
         if (*pac::RCC::PTR).cfgr.read().sws().is_msi() {
             (*pac::RCC::PTR).cfgr.modify(|_, w| w.stopwuck().clear_bit()); // If currently using MSI, set wakeup clock to MSI
@@ -50,7 +49,5 @@ pub fn enter_stop2_mode() {
             dp.RCC.cr.write(|w| w.hseon().set_bit());
             while dp.RCC.cr.read().hserdy().bit_is_clear() {}
         }
-
-        cortex_m::interrupt::enable();
     }
 }
