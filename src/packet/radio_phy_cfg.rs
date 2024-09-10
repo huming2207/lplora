@@ -1,6 +1,6 @@
 use stm32wlxx_hal::{
     spi::{SgMiso, SgMosi},
-    subghz::{self, Ocp, PaConfig, PaSel, RampTime, RegMode, StandbyClk, SubGhz, TxParams},
+    subghz::{self, Ocp, PaConfig, PaSel, RampTime, RegMode, StandbyClk, SubGhz, Timeout, TxParams},
 };
 
 use super::{uart_pkt_decoder::UartPacketDecoder, UartPacketError};
@@ -84,6 +84,8 @@ impl RadioPhyConfigurator {
         } else {
             radio.set_rx_gain(subghz::PMode::PowerSaving)?;
         }
+
+        radio.set_rx(Timeout::from_millis_sat(5000))?;
 
         defmt::info!(
             "RadioPhyConfigurator: config OK, PA config: {:?}, OCP: {:?}, TxParams: {:?}",

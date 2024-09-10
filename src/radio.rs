@@ -1,6 +1,6 @@
 use stm32wlxx_hal::{
     spi::{Error, SgMiso, SgMosi},
-    subghz::{CfgIrq, FallbackMode, Irq, Ocp, RegMode, StandbyClk, SubGhz, Timeout},
+    subghz::{CfgIrq, CodingRate, FallbackMode, HeaderType, Irq, LoRaBandwidth, LoRaModParams, LoRaPacketParams, LoRaSyncWord, Ocp, PacketType, RegMode, SpreadingFactor, StandbyClk, SubGhz, Timeout},
 };
 
 use crate::{
@@ -32,6 +32,19 @@ fn radio_encode_packet(radio: &mut SubGhz<SgMiso, SgMosi>, rx_queue: &mut CacheQ
     Ok(())
 }
 
+const MOD_PARAMS: LoRaModParams = LoRaModParams::new()
+    .set_sf(SpreadingFactor::Sf10)
+    .set_bw(LoRaBandwidth::Bw125)
+    .set_cr(CodingRate::Cr45)
+    .set_ldro_en(false);
+
+const PKT_PARAMS: LoRaPacketParams = LoRaPacketParams::new()
+    .set_preamble_len(16)
+    .set_header_type(HeaderType::Variable)
+    .set_payload_len(24)
+    .set_crc_en(true)
+    .set_invert_iq(false);
+
 pub fn setup_radio(radio: &mut SubGhz<SgMiso, SgMosi>) -> Result<(), Error> {
     radio.set_standby(StandbyClk::Rc)?;
     radio.set_tx_rx_fallback_mode(FallbackMode::StandbyHse)?;
@@ -40,6 +53,12 @@ pub fn setup_radio(radio: &mut SubGhz<SgMiso, SgMosi>) -> Result<(), Error> {
     radio.set_regulator_mode(RegMode::Smps)?;
     radio.set_buffer_base_address(TX_BUF_OFFSET, RX_BUF_OFFSET)?;
     radio.set_pa_ocp(Ocp::Max140m)?;
+
+    radio.set_standby(StandbyClk::Rc)?;
+    radio.set_packet_type(PacketType::LoRa)?;
+    radio.set_lora_sync_word(LoRaSyncWord::Custom([0x24, 0x34]))?;
+    radio.set_lora_mod_params(&MOD_PARAMS)?;
+    radio.set_lora_packet_params(&PKT_PARAMS)?;
 
     Ok(())
 }

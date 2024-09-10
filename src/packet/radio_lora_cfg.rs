@@ -2,7 +2,7 @@ use stm32wlxx_hal::{
     spi::{SgMiso, SgMosi},
     subghz::{
         self, CodingRate, HeaderType, LoRaBandwidth, LoRaModParams, LoRaPacketParams, LoRaSyncWord, PacketType,
-        SpreadingFactor, StandbyClk, SubGhz,
+        SpreadingFactor, StandbyClk, SubGhz, Timeout,
     },
 };
 
@@ -128,6 +128,8 @@ impl RadioLoraConfigurator {
             self.sync_word[1],
             self.lora_mod
         );
+
+        radio.set_rx(Timeout::from_millis_sat(5000))?;
         Ok(())
     }
 }
