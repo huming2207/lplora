@@ -11,6 +11,7 @@ pub mod uart_pkt_decoder;
 pub mod uart_pkt_encoder;
 
 pub const CRC: crc::Crc<u16, Table<1>> = crc::Crc::<u16, Table<1>>::new(&crc::CRC_16_KERMIT);
+pub const CRC32: crc::Crc<u32, Table<1>> = crc::Crc::<u32, Table<1>>::new(&crc::CRC_32_MPEG_2);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, defmt::Format)]
 pub enum UartPacketError {

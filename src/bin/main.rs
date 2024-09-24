@@ -15,11 +15,14 @@ use lplora as _; // global logger + panicking-behavior + memory layout
 mod app {
     use cortex_m::asm::wfi;
     use cortex_m::interrupt::CriticalSection;
+    use crc::CRC_32_XFER;
     use heapless::spsc::Queue;
     use lplora::constants::{CacheQueue, RFSW_GPIO_OUTPUT_ARGS};
+    use lplora::packet::CRC32;
     use lplora::radio::{handle_radio_rx_done, setup_radio, start_radio_rx, start_radio_tx};
     use lplora::uid::read_uid;
     use stm32wlxx_hal::gpio::pins::{B8, C13};
+    use stm32wlxx_hal::pac::Peripherals;
     use stm32wlxx_hal::pwr::{enter_lprun_msi, LprunRange};
     use stm32wlxx_hal::spi::{SgMiso, SgMosi};
     use stm32wlxx_hal::subghz::{Irq, SubGhz};
@@ -82,6 +85,11 @@ mod app {
             dp.DBGMCU.cr.modify(|_, w| w.dbg_stop().clear_bit());
         }
 
+        // Enable EOL detector
+        dp.PWR.cr5.modify(|_, w| {
+            w.rfeolen().set_bit()
+        });
+
         // Set up RF Switch GPIOs
         let mut rf_sw_1 = Output::new(io_b.b8, &RFSW_GPIO_OUTPUT_ARGS, cs);
         let mut rf_sw_2 = Output::new(io_c.c13, &RFSW_GPIO_OUTPUT_ARGS, cs);
@@ -122,6 +130,7 @@ mod app {
         let mut radio = ctx.local.radio;
         let rf_sw_1 = ctx.local.rf_sw_1;
         let rf_sw_2 = ctx.local.rf_sw_2;
+        let dp = unsafe { Peripherals::steal() };
 
         let was_tx = ctx.local.was_tx;
         let (_, irq) = radio.irq_status().unwrap();
@@ -136,8 +145,18 @@ mod app {
                 rf_sw_2.set_level_high();
                 let mut tx_buf: [u8; 24] = [0; 24];
                 let uid = read_uid();
-                tx_buf[..20].copy_from_slice(&uid);
-                unsafe { tx_buf[20..].copy_from_slice(&TX_COUNTER.to_le_bytes()); }
+                tx_buf[..15].copy_from_slice(&uid[..15]);
+                tx_buf[15] = if dp.PWR.sr2.read().rfeolf().bit_is_set() {
+                    1
+                } else {
+                    0
+                };
+    
+                unsafe { tx_buf[16..20].copy_from_slice(&TX_COUNTER.to_le_bytes()); }
+                let mut crc32 = CRC32.digest();
+                crc32.update(&tx_buf[..20]);
+                let crc32_val = crc32.finalize();
+                tx_buf[20..].copy_from_slice(&crc32_val.to_le_bytes());
     
                 start_radio_tx(&mut radio, &tx_buf, 5000).unwrap();
             }
@@ -150,8 +169,18 @@ mod app {
             rf_sw_2.set_level_high();
             let mut tx_buf: [u8; 24] = [0; 24];
             let uid = read_uid();
-            tx_buf[..20].copy_from_slice(&uid);
-            unsafe { tx_buf[20..].copy_from_slice(&TX_COUNTER.to_le_bytes()); }
+            tx_buf[..15].copy_from_slice(&uid[..15]);
+            tx_buf[15] = if dp.PWR.sr2.read().rfeolf().bit_is_set() {
+                1
+            } else {
+                0
+            };
+
+            unsafe { tx_buf[16..20].copy_from_slice(&TX_COUNTER.to_le_bytes()); }
+            let mut crc32 = CRC32.digest();
+            crc32.update(&tx_buf[..20]);
+            let crc32_val = crc32.finalize();
+            tx_buf[20..].copy_from_slice(&crc32_val.to_le_bytes());
 
             start_radio_tx(&mut radio, &tx_buf, 5000).unwrap();
         } else if irq & Irq::TxDone.mask() != 0 {
