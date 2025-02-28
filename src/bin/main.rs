@@ -36,11 +36,6 @@ mod app {
     // Shared resources go here
     #[shared]
     struct Shared {
-        #[lock_free]
-        uart_tx_q: CacheQueue,
-
-        #[lock_free]
-        uart_rx_q: CacheQueue,
     }
 
     // Local resources go here
@@ -94,9 +89,6 @@ mod app {
         let mut rf_sw_1 = Output::new(io_b.b8, &RFSW_GPIO_OUTPUT_ARGS, cs);
         let mut rf_sw_2 = Output::new(io_c.c13, &RFSW_GPIO_OUTPUT_ARGS, cs);
 
-        let uart_tx_q: CacheQueue = Queue::new();
-        let uart_rx_q: CacheQueue = Queue::new();
-
         let mut radio = SubGhz::new(dp.SPI3, &mut dp.RCC);
         setup_radio(&mut radio).unwrap();
 
@@ -116,7 +108,7 @@ mod app {
         defmt::info!("Init setup complete!");
 
         (
-            Shared { uart_tx_q, uart_rx_q },
+            Shared { },
             Local {
                 rf_sw_1,
                 rf_sw_2,
@@ -125,7 +117,7 @@ mod app {
         )
     }
 
-    #[task(binds = RADIO_IRQ_BUSY, local = [was_tx: bool = false, radio, rf_sw_1, rf_sw_2], shared = [uart_tx_q])]
+    #[task(binds = RADIO_IRQ_BUSY, local = [was_tx: bool = false, radio, rf_sw_1, rf_sw_2])]
     fn radio_task(ctx: radio_task::Context) {
         let mut radio = ctx.local.radio;
         let rf_sw_1 = ctx.local.rf_sw_1;
@@ -162,8 +154,7 @@ mod app {
             }
         } else if irq & Irq::RxDone.mask() != 0 {
             defmt::info!("radio: RxDone, handling...");
-            let uart_tx_queue = ctx.shared.uart_tx_q;
-            handle_radio_rx_done(radio, irq, uart_tx_queue).unwrap();
+            //handle_radio_rx_done(radio, irq, uart_tx_queue).unwrap();
 
             rf_sw_1.set_level_low();
             rf_sw_2.set_level_high();
