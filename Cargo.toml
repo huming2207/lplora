@@ -7,11 +7,11 @@ version = "0.1.0"
 [dependencies]
 heapless = "0.8.0"
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
-defmt = "0.3.8"
-defmt-rtt = "0.4.1"
-panic-probe = { version = "0.3", features = ["print-defmt"] }
-crc = "3.2.1"
-rtic = { version = "2.1.1", features = [ "thumbv7-backend" ] }
+defmt = "1.0.1"
+defmt-rtt = "1.0.0"
+panic-probe = { version = "1.0.0", features = ["print-defmt"] }
+crc = "3.3.0"
+rtic = { version = "2.2.0", features = [ "thumbv7-backend" ] }
 stm32wlxx-hal = { git = "https://github.com/huming2207/stm32wlxx-hal", rev = "9a8dca4a490aa8282e71b10bdc45ec2e484cbd81", features = ["stm32wle5", "defmt", "rt", "chrono"] }
 # TODO add a monotonic if you use scheduling
 # rtic-monotonics = { version = "1.0.0", features = [ "cortex-m-systick" ]}
